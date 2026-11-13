@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.local/
+output/
+tmp/
+public/ref/
+public/samples/
+src/vendor/
+src/assets/
+docs/whitepaper/
+docs/figures/
+/VALIDATION.md
+package-lock.json

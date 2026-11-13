@@ -1,0 +1,17 @@
+{
+  "source": "https://github.com/genomewalk/genomewalk/tree/main/src/lib",
+  "files": {
+    "app-error.ts": "6266cdbbc76f17a13701b7b8543d4154a9cbe61f0685c4b5736dfec9160ca42a",
+    "async/schedule.ts": "4e77b6756edc7b23bcd7c071dbc55fb3e166892ae8b69bdd92a39445bc9bd65e",
+    "catalogues/catalogue-stream.ts": "13e2a4cf30e98a8aeccbaf7dbf6a8efc53dba6c14ae7ec98a66288d6f050be31",
+    "catalogues/rows.ts": "abeed41558ab005b4372cb330af9f05248636bb07aaf8cd658fb09c4d9d652f6",
+    "catalogues/types.ts": "ffc6941e82c6d6c724b411183adeb1ba3564a0245226b3fd62dd0d2aae4fdfa8",
+    "diagnostics/reading.ts": "c316267beaf58a981e6e8ab74f27f19884f3c023d359f89265e8aaf66fbb222a",
+    "diagnostics/runtime-failure.ts": "ec32cb0bfbaf59c3996a8a66c030235f38330885e4aa01817e2e745848a2aef8",
+    "io/bgzf.ts": "78b52dd1420031c1ac77a8243fe1f4e0b8631a8480f0ab555a191381e2bd1eea",
+    "io/checksum.ts": "2ef1a5e1f77d0807c61b104bb3f1d3a454173c7ee3ddeb5b050c0a53280d6c7b",
+    "io/fetch-public.ts": "f50f324bef03fa5427c0751e3152b001f2dfba61610361c73f706a129789cd32",
+    "io/types.ts": "faf8d333138945e495752b61cb40358da662801b7fff21c5fd27b3fbeb637b6f",
+    "public-file.ts": "98104baa50f6abd36c5fd3118da31ab0f812f1816cf3ce9626b6cbde11e7dfae"
+  }
+}

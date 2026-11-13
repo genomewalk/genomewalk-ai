@@ -1,0 +1,50 @@
+# Dependencies and builds
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Local credentials, private data, historical studies and generated artifacts
+.env
+.env.*
+.local/
+output/
+/VALIDATION.md
+docs/whitepaper/
+docs/figures/
+private-data/
+data/
+*.sqlite*
+*.partial
+*.vcf
+*.vcf.gz
+*.bcf
+*.bam
+*.cram
+*.fastq*
+*.fq*
+*.tbi
+*.csi
+*.zip
+*.txt.gz
+sample_dna*
+genome_*.txt
+AncestryDNA*.txt
+23andme*.txt
+
+# Public prepared reference files are intentional source artifacts.
+!public/ref/**
+# Only Genomewalk’s public teaching sample is committed.
+!public/samples/HG002_GRCh38.vcf.gz
+
+# Editor and document build artifacts
+.vscode/
+.idea/
+*.aux
+*.bbl
+*.blg
+*.out
+*.synctex.gz
+
+tmp/

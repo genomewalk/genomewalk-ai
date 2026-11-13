@@ -1,0 +1,27 @@
+# Allowlist: private files and old studies never enter the Docker build context.
+**
+!package.json
+!package-lock.json
+!vite.config.js
+!.oxlintrc.json
+!.prettierrc.json
+!.prettierignore
+!index.html
+!src/
+!src/**
+!scripts/
+!scripts/**
+!tests/
+!tests/**
+!public/
+!public/favicon.svg
+!public/.nojekyll
+!public/ref/
+!public/ref/**
+!public/samples/
+!public/samples/HG002_GRCh38.vcf.gz
+!public/samples/README.md
+**/.DS_Store
+**/*.log
+**/*.partial
+**/*.sqlite*

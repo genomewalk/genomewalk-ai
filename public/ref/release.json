@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "catalogs": {
+    "GRCh37": {
+      "build": "GRCh37",
+      "rows": 511282,
+      "sha256": "143a72bd3207ece9c392ca4b2b8c3a45076071d07259cd29662de8035a4859cb",
+      "cacheKey": "72dd6852f43760b5d0b6363e338735439fbed284bf415b4b9b17ed5a4497935f",
+      "lookupRevision": "40a565d01069e42f8d8a1b03c55556ba8802d27456844a2c7a71d6d19a37d198"
+    },
+    "GRCh38": {
+      "build": "GRCh38",
+      "rows": 511286,
+      "sha256": "54b0ce255b720387667a4f7299adf025841f8ee35255d6b9117bf1a5f1b31905",
+      "cacheKey": "35bd3db27cdf452e1ac4c196053e05fe12ee3279afe55de51f03b29a7c2d05c1",
+      "lookupRevision": "0851b0d7c361200969cd3005772f195f4add80f4c5bb28227b9f68668d6f2c3a"
+    }
+  }
+}

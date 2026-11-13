@@ -1,0 +1,68 @@
+{
+  "source": "https://github.com/genomewalk/genomewalk/tree/main/src",
+  "notes": [
+    "Relative imports relocated to the existing vendor directory.",
+    "reader.ts: removed unused consumerStats re-export.",
+    "matching.ts: retained only observeCalls, exported for the existing catalog hydration pipeline. Matching rules are unchanged.",
+    "calls.ts: removed unused calledLetters export.",
+    "lookup/index.ts: optional fetcher injection for local tests; same public download and validation.",
+    "containers.ts: corrected ZIP/VCF error copy because this app also accepts plain VCF."
+  ],
+  "files": {
+    "consumer-dna/reader.ts": {
+      "source": "experiences/consumer-dna/reader.ts",
+      "sourceSha256": "a788fb74b0dc038d5164bd6af0e6088b1ba275e408d7abd2919cfe9e22a80da4",
+      "sha256": "393f9e68877d53c6b51131fb4d807bcee2b416466796ee328d7b9a9648c985a7"
+    },
+    "consumer-dna/containers.ts": {
+      "source": "experiences/consumer-dna/containers.ts",
+      "sourceSha256": "1986f87f87124adcaaeb68015944a37646988a1b1c4d4c24ced4b53fdd8a0c96",
+      "sha256": "3446829bf066fda36f221bbccf227e870d558c5d09abc58f1662b93cae352459"
+    },
+    "consumer-dna/types.ts": {
+      "source": "experiences/consumer-dna/types.ts",
+      "sourceSha256": "a4eb7801a190139d757b4ece4fa77111d22e01c3335c62c4c803014097c16b54",
+      "sha256": "e3239233c2de1f90be3d4d0af5a78c731a497d6ed6243df6ea125b002447e863"
+    },
+    "consumer-dna/reader/header.ts": {
+      "source": "experiences/consumer-dna/reader/header.ts",
+      "sourceSha256": "163b40153f4364186fc03ac1fca57efc2d4d90ae3feb4a8e4bd69dddcdbb58c4",
+      "sha256": "03a00611d8b98803dd043497f711f15dd5f6bf4c21a75733b995b8ed048eab3a"
+    },
+    "consumer-dna/reader/call.ts": {
+      "source": "experiences/consumer-dna/reader/call.ts",
+      "sourceSha256": "26c9cb29f798a655c38411596bbecd831f0a4d0fe232406f474c32ff6a655667",
+      "sha256": "ffefe289ce508eb05afb300ae570cc96fa61e3a63098a31a1e35bcea5960c829"
+    },
+    "consumer-dna/engine/identity.ts": {
+      "source": "experiences/consumer-dna/engine/identity.ts",
+      "sourceSha256": "7c4c8657aec2734cba37d7c012f4abc144aef49e57e816f1d333fb459a17ea15",
+      "sha256": "7c4c8657aec2734cba37d7c012f4abc144aef49e57e816f1d333fb459a17ea15"
+    },
+    "consumer-dna/engine/calls.ts": {
+      "source": "experiences/consumer-dna/engine/calls.ts",
+      "sourceSha256": "d478d36db1274d04cb12bbdd3a7755bfb182563e3778fefde7d144a599f8df5e",
+      "sha256": "8485fc8aff4872240dc200c46c90e5e3353025916f8310003fe01028b4f8d864"
+    },
+    "consumer-dna/engine/matching.ts": {
+      "source": "experiences/consumer-dna/engine/matching.ts",
+      "sourceSha256": "f27573c224a445850a3757f03a3690925b9275af43561941c112e25604781ec2",
+      "sha256": "53721e9ff49819884b959056cc74fe511215bb38f0aa902d412cb7f95e0a5a9f"
+    },
+    "consumer-dna/lookup/index.ts": {
+      "source": "experiences/consumer-dna/lookup/index.ts",
+      "sourceSha256": "c2b56c2b29a67514e8e9d5f0d92ca61f49e396fb68e6029c6de0e84757b40f8a",
+      "sha256": "f3cbe19312dbe61020dfaaa23ad002179a7daeb263206ff7b01c0b0759fe39ec"
+    },
+    "genetics/reference-build.ts": {
+      "source": "lib/genetics/reference-build.ts",
+      "sourceSha256": "91d60dc6efd12459e01d1cd9f2c87b4c99e513dbabf83cf66016deb3482746c1",
+      "sha256": "91d60dc6efd12459e01d1cd9f2c87b4c99e513dbabf83cf66016deb3482746c1"
+    },
+    "vcf/reference.ts": {
+      "source": "experiences/vcf/engine/reference.ts",
+      "sourceSha256": "cce099497525fa7eac55955ab7ae2a6a015a8a1622fb03c6281053b3730a107d",
+      "sha256": "aa7d61ce51a3fa1dfe8a1ad01e2c4f0b1bcbabeffe364539b05a66aeb562497c"
+    }
+  }
+}

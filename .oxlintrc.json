@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "import"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "ignoreRestSiblings": true }
+    ]
+  },
+  "env": { "browser": true, "node": true, "worker": true },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    ".local/**",
+    "output/**",
+    "tmp/**",
+    "public/**",
+    "src/vendor/**",
+    "docs/whitepaper/**",
+    "docs/figures/**"
+  ]
+}

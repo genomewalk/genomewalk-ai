@@ -1,0 +1,47 @@
+{
+  "name": "genomewalk-ai",
+  "version": "0.14.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "data:sync": "node scripts/references.js sync",
+    "data:check": "node scripts/references.js check",
+    "build": "npm run data:check && vite build",
+    "preview": "node scripts/preview.js",
+    "start": "node scripts/preview.js",
+    "test": "node --test tests/*.test.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "oxlint",
+    "check": "npm run format:check && npm run lint && npm test",
+    "check:release": "npm run check && npm run build && node scripts/check-dist.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "@mlc-ai/web-llm": "0.2.87",
+    "@noble/hashes": "2.4.0",
+    "fflate": "0.8.3",
+    "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0",
+    "pako": "3.0.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "oxlint": "1.93.0",
+    "prettier": "3.10.1",
+    "vite": "8.3.5"
+  },
+  "description": "A private, conversational guide to your genome. Ask questions about your DNA and explore ClinVar annotations, gnomAD frequencies, and linked publications. Genome matching, search, and AI run locally in your browser. Your DNA and conversations stay on your device.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/genomewalk/genomewalk-ai.git"
+  }
+}
