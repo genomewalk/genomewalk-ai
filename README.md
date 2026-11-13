@@ -2,7 +2,7 @@
 
 A private, conversational guide to your genome. Ask questions about your DNA and explore ClinVar annotations, gnomAD frequencies, and linked publications. Genome matching, search, and AI run locally in your browser. Your DNA and conversations stay on your device.
 
-This is a **static website**, built with React and Vite. Like [Genomewalk](https://github.com/genomewalk/genomewalk), it serves prepared public reference files and a public GIAB sample alongside the app. There is no application API, upload endpoint, cloud inference, database server, or API key.
+This is a **static website**, built with TypeScript, React and Vite. Like [Genomewalk](https://github.com/genomewalk/genomewalk), it serves prepared public reference files and a public GIAB sample alongside the app. There is no application API, upload endpoint, cloud inference, database server, or API key.
 
 [Open Genomewalk AI](https://genomewalk.github.io/genomewalk-ai/) · [Source repository](https://github.com/genomewalk/genomewalk-ai)
 
@@ -72,13 +72,13 @@ There are no question-keyword, gene-name, or disease-specific routing rules. Gen
 | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `src/components/`                              | Genome intake, chat, source evidence and step diagrams                                  |
 | `src/styles/`                                  | Chat layout, journey panels and genome intake styling                                   |
-| `src/lib/embeddings-session.js`                | Preparation and question lifecycle; cancellation and conversation history               |
-| `src/lib/genome-source.js`, `genome.worker.js` | Local file identification, hashing and matching                                         |
-| `src/lib/local-catalog.js`, `public-files.js`  | Static references, validation and deployment paths                                      |
-| `src/lib/embeddings.worker.js`                 | Local embedding index and cosine similarity                                             |
-| `src/lib/evidence-ranking.js`                  | Shared field-based retrieval policy                                                     |
-| `src/lib/evidence-answer.js`                   | Record selection, short opening and exact source rendering                              |
-| `src/lib/local-model-session.js`, `webllm.js`  | Model selection, worker lifetime and inference                                          |
+| `src/lib/embeddings-session.ts`                | Preparation and question lifecycle; cancellation and conversation history               |
+| `src/lib/genome-source.ts`, `genome.worker.ts` | Local file identification, hashing and matching                                         |
+| `src/lib/local-catalog.ts`, `public-files.ts`  | Static references, validation and deployment paths                                      |
+| `src/lib/embeddings.worker.ts`                 | Local embedding index and cosine similarity                                             |
+| `src/lib/evidence-ranking.ts`                  | Shared field-based retrieval policy                                                     |
+| `src/lib/evidence-answer.ts`                   | Record selection, short opening and exact source rendering                              |
+| `src/lib/local-model-session.ts`, `webllm.ts`  | Model selection, worker lifetime and inference                                          |
 | `src/config/`, `src/prompts/`                  | Model profiles, budgets, ranking weights and shared prompts                             |
 | `src/vendor/genomewalk/`                       | Genomewalk parsing and validation modules, with documented adaptations and fingerprints |
 | `public/ref/`, `public/samples/`               | Checked-in public data; no personal files                                               |
@@ -101,10 +101,13 @@ Synchronization copies only the two prepared catalogs, their metadata and consum
 
 ```sh
 npm test              # Synthetic fixtures and exact source checks; no live LLM
-npm run lint         # JavaScript/React correctness and unused code
+npm run typecheck    # Strict TypeScript: app, workers, scripts and tests
+npm run lint         # TypeScript/React correctness and unused code
 npm run format       # Consistent source formatting (vendor files stay untouched)
 npm run check:release
 ```
+
+Source files use `.ts` / `.tsx`; `tsconfig.base.json` shares strict checks, including array bounds, across the app, build scripts and tests. Vite bundles the browser code; Node 24 runs the TypeScript scripts and tests directly. Docker and CI run the same checks before building.
 
 Tests use synthetic calls, with public annotations where documented. Passing tests are software verification, not clinical validation. Browser smoke checks are recorded separately in [validation notes](docs/VALIDATION.md).
 

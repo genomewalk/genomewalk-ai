@@ -41,4 +41,20 @@ The generated openings were not clinically reviewed. The direct answer used the 
 
 Both `site` and `export` targets build successfully. Formatting, tests and compilation run with Docker build networking disabled after dependency installation. The optional file-serving container runs as UID 1000 and contains `dist/`, the preview script and package metadata; it has no application server, installed dependencies or environment file.
 
-GitHub Pages workflow files, MIT licensing and ignore rules are prepared. No repository was created, no code was pushed and nothing was published. Deployment on the eventual public host still needs its own smoke check after setup.
+This original static-delivery pass preceded publication. The repository has since been published at https://github.com/genomewalk/genomewalk-ai, with GitHub Pages at https://genomewalk.github.io/genomewalk-ai/.
+
+## TypeScript migration — 13 November 2026
+
+All owned application modules, React components, workers, configuration, build scripts and tests now use TypeScript. `npm run typecheck` checks the app, tooling and tests separately with strict mode and unchecked-index checks; Docker/CI run it as part of the release checks. No `allowJs`, `@ts-nocheck` or language-statistics overrides were added. The vendored Genomewalk modules, prepared references, source prompts and CSS are unchanged.
+
+- Formatting, type checks, lint and all **110 tests passed**. Tests still exercise malformed untyped inputs at runtime; the intentional type errors are explicitly marked in those fixtures.
+- Production build and static-output integrity/allowlist checks passed.
+- Both Docker targets (`export` and `site`) built with Node **24.22.3**. The static container ran as UID **1000** and served HTTP 200. Release checks/build ran without networking after dependency installation.
+- In-app browser at the root URL: public HG002 preparation completed with **426 matches** using saved matches and a rebuilt embedding index. No answer model loaded automatically.
+- Fresh origin serving the Docker-exported `/genomewalk-ai/` path: catalog download, full sample matching and embedding preparation completed with **426 matches**. No answer model loaded automatically.
+- Explicitly selected **Qwen3.5 9B** at the root URL. “Do I have variants related to hearing loss?” completed and displayed the two WFS1 records. “What does conflicting classification mean for these two records?” completed as a conversation follow-up, without a new search.
+- No browser error logs appeared in either run. Other answer models were not rerun in this migration pass.
+
+These are migration smoke checks, not an accuracy evaluation. The direct opening again described a listed condition as an association. The follow-up ambiguously described ClinVar versus “another source,” although the displayed classifications are within the supplied ClinVar annotation. The prompts and answer policy were not changed in this migration.
+
+Type checking identified two library API mismatches: the feature-extraction pipeline ignored per-call truncation options, so the configured **256-token** bound is now applied to its tokenizer; gzip inspection now uses Pako’s public `onStart` stream callback instead of a private field. The concatenated-gzip, checksum and truncation tests passed, as did full HG002 matching. Embedding truncation can change similarity scores for long descriptions; clinical validation is still outstanding.

@@ -5,17 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "data:sync": "node scripts/references.js sync",
-    "data:check": "node scripts/references.js check",
+    "data:sync": "node scripts/references.ts sync",
+    "data:check": "node scripts/references.ts check",
     "build": "npm run data:check && vite build",
-    "preview": "node scripts/preview.js",
-    "start": "node scripts/preview.js",
-    "test": "node --test tests/*.test.js",
+    "preview": "node scripts/preview.ts",
+    "start": "node scripts/preview.ts",
+    "test": "node --test tests/*.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "oxlint",
-    "check": "npm run format:check && npm run lint && npm test",
-    "check:release": "npm run check && npm run build && node scripts/check-dist.js"
+    "check": "npm run format:check && npm run typecheck && npm run lint && npm test",
+    "check:release": "npm run check && npm run build && node scripts/check-dist.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.tests.json"
   },
   "engines": {
     "node": ">=24"
@@ -33,9 +34,14 @@
     "remark-gfm": "4.0.1"
   },
   "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.1.2",
+    "@webgpu/types": "0.1.74",
     "oxlint": "1.93.0",
     "prettier": "3.10.1",
+    "typescript": "5.9.3",
     "vite": "8.3.5"
   },
   "description": "A private, conversational guide to your genome. Ask questions about your DNA and explore ClinVar annotations, gnomAD frequencies, and linked publications. Genome matching, search, and AI run locally in your browser. Your DNA and conversations stay on your device.",

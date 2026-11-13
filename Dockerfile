@@ -20,10 +20,10 @@ COPY --from=build /app/dist/ /
 FROM node:24-trixie-slim AS site
 WORKDIR /app
 COPY --from=build /app/dist/ ./dist/
-COPY scripts/preview.js ./scripts/preview.js
-COPY scripts/lib/static-server.js ./scripts/lib/static-server.js
+COPY scripts/preview.ts ./scripts/preview.ts
+COPY scripts/lib/static-server.ts ./scripts/lib/static-server.ts
 COPY package.json ./package.json
 USER node
 ENV HOST=0.0.0.0 PORT=5173
 EXPOSE 5173
-CMD ["node", "scripts/preview.js"]
+CMD ["node", "scripts/preview.ts"]

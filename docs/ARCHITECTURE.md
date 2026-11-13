@@ -30,7 +30,7 @@ Genomewalk's streaming reader checks the public catalog's compressed size, SHA-2
 
 Completed matches can be stored in this browser's localStorage. The cache contains personal matched calls, so it is private local data, not encrypted storage. Changing the file, reference fingerprint or matching version invalidates reuse. Full genomes and conversations are not persisted by this cache. The UI provides a way to forget saved matches.
 
-`Xenova/all-MiniLM-L6-v2`, pinned in `src/config/embeddings.js`, embeds public annotation text for the matches. It runs through Transformers.js on WASM, using q8 weights, mean pooling and normalized 384-dimensional vectors. Documents are tokenizer-limited to 256 tokens. Vectors remain in memory and are rebuilt after refresh. No answer model loads until the user chooses one.
+`Xenova/all-MiniLM-L6-v2`, pinned in `src/config/embeddings.ts`, embeds public annotation text for the matches. It runs through Transformers.js on WASM, using q8 weights, mean pooling and normalized 384-dimensional vectors. Documents are tokenizer-limited to 256 tokens. Vectors remain in memory and are rebuilt after refresh. No answer model loads until the user chooses one.
 
 ## Each question
 
