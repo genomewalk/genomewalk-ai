@@ -117,7 +117,7 @@ test('same-position FH alleles stay distinct through matching, annotation hydrat
   assert.ok(!request.includes('TGAGAGA'));
   assert.ok(!request.includes('NOP10'));
   const rendered = renderRecordSelection({ selected: ['v1'] }, context.recordReference);
-  assert.match(rendered, /These results are from \*\*the genome file you uploaded\*\*/);
+  assert.doesNotMatch(rendered, /These results are from/);
   assert.match(rendered, /selected file contains T and TGAGA/);
   assert.match(
     context.recordReference.records[0]!.fields.find((f) => f.label === 'ClinVar classification')!

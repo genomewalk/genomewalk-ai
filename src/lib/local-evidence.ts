@@ -1,4 +1,13 @@
-import type { MatchedRow } from './types.ts';
+import type { MatchedRow, SourceLink } from './types.ts';
+
+// The prepared catalog supplies symbols, not numeric NCBI Gene IDs.
+export function geneSource(gene: string): SourceLink {
+  return {
+    label: gene,
+    url: `https://www.ncbi.nlm.nih.gov/gene/?term=${encodeURIComponent(`${gene}[sym] AND human[orgn]`)}`,
+  };
+}
+
 const text = (value: unknown) =>
   value == null || value === '' || value === '.' ? null : String(value);
 const number = (value: unknown) =>

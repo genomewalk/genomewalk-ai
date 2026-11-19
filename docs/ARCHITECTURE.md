@@ -34,7 +34,7 @@ Completed matches can be stored in this browser's localStorage. The cache contai
 
 ## Each question
 
-The same shared planner prompt serves every supported answer model. It returns exactly one of three categories:
+The same shared planner prompt serves every supported answer model. It asks for evidence search when a follow-up interprets specific matched findings, and returns exactly one of three categories:
 
 | Category                  | Action                                                                                                |
 | ------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -50,7 +50,7 @@ The weights are visible and adjustable. Exact prepared catalog codes map to clas
 
 Up to three new records are included in the answer input. Context assembly admits complete records and the newest complete conversation turns that fit the selected model's budget; it does not summarize away original evidence. Prior assistant prose can resolve a follow-up, but cannot introduce new source facts.
 
-A constrained local inference call selects record IDs from the supplied reference. Invalid or unfinished selections fail visibly. A second local call writes a brief opening from selected records only. Source details are then rendered from original fields, preserving calls, classifications, frequencies and links. Generated prose is not repaired with keyword filters. This preserves source values but does not guarantee that the generated opening is correct.
+A constrained local inference call selects record IDs from the supplied reference. Invalid or unfinished selections fail visibly. A second local call is asked to explain the selected records in up to 150 words, with a 512-token output allowance. The prompt permits general genetics knowledge to explain concepts, while requiring claims about particular variants to come from the selected reference. Source details are then rendered from original fields, preserving calls, classifications, frequencies and links. Generated prose is not repaired with keyword filters. This preserves source values but does not guarantee that the generated explanation is correct. The current explanation experiment has unresolved answer-quality failures; see the [development check](evidence-explanation-check.md).
 
 The `Other` path uses a shared general-answer prompt and conversation context. It does not demand a personal genome to define a genetics concept.
 

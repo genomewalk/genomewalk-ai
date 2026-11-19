@@ -54,7 +54,12 @@ test('a short answer precedes complete source sections with exact fields, in rev
   assert.deepEqual(selection, before, 'Rendering never changes the model selection');
   assert.ok(output.startsWith(opening + '\n\n### '));
   assert.ok(output.indexOf('CDKN2B') < output.indexOf('PDGFRA'), 'Review order is preserved');
-  assert.ok(output.includes('### CDKN2B\n\n' + mixed!.variant));
+  assert.ok(
+    output.includes(
+      '### [CDKN2B](https://www.ncbi.nlm.nih.gov/gene/?term=CDKN2B%5Bsym%5D%20AND%20human%5Borgn%5D)\n\n' +
+        mixed!.variant,
+    ),
+  );
   assert.equal(JSON.parse(c.messages[1]!.content).reference.records[0]!.variant, mixed!.variant);
   assert.deepEqual(
     JSON.parse(c.messages[1]!.content).scope,
@@ -112,7 +117,7 @@ test('opening context contains only chosen source records, no IDs, and shared ru
     assert.deepEqual(c.messages, first.messages);
     assert.deepEqual(c.generation, first.generation);
     assert.equal(c.messages.length, 2);
-    assert.equal(c.generation.max_tokens, 256);
+    assert.equal(c.generation.max_tokens, 512);
     assert.equal(
       'response_format' in c.generation ? c.generation.response_format : undefined,
       undefined,

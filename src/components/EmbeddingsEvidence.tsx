@@ -8,6 +8,7 @@ import { Disclosure } from './StepDetails.tsx';
 import { RequestDiagram } from './RequestDiagram.tsx';
 import { MarkdownResponse } from './MarkdownResponse.ts';
 import { Icon } from './Icons.tsx';
+import { geneSource } from '../lib/local-evidence.ts';
 
 const number = (value: number | null | undefined) => (value == null ? '—' : value.toLocaleString());
 const PLAN_DESCRIPTIONS = {
@@ -75,8 +76,13 @@ function RecordReference({ record }: { record: ReferenceRecord }) {
       <header className="input-record-heading">
         <div>
           <h3>
-            {record.gene ||
-              (identifiers.length ? <SourceLinks sources={identifiers} /> : 'Variant')}
+            {record.gene ? (
+              <SourceLinks sources={[geneSource(record.gene)]} />
+            ) : identifiers.length ? (
+              <SourceLinks sources={identifiers} />
+            ) : (
+              'Variant'
+            )}
           </h3>
           {record.gene && !!identifiers.length && <SourceLinks sources={identifiers} />}
         </div>

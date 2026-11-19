@@ -17,6 +17,7 @@ export interface RecordEvidence {
 import { EVIDENCE_OPENING_PROMPT } from '../prompts/embeddings.ts';
 import { conversationMessages, fitConversation } from './conversation-context.ts';
 import { MAX_RECORDS, EVIDENCE_OPENING } from '../config/evidence-answer.ts';
+import { geneSource } from './local-evidence.ts';
 
 // A selected record always displays these same source fields. The model chooses
 // records, not which source fields to hide.
@@ -163,17 +164,20 @@ export function renderRecordSelection(
   };
   const sections = reference.records
     .filter((record) => selected.has(record.id))
-    .map(
-      (record) =>
-        `### ${literal(record.gene || 'Variant')}\n\n${literal(record.variant)}\n\n${record.fields.map(fieldLine).join('\n')}`,
-    );
+    .map((record) => {
+      const variantIds = record.fields.find(
+        ({ label }) => label === 'Variant ID (dbSNP)' || label === 'Variant IDs (dbSNP)',
+      )?.sources;
+      const title = record.gene
+        ? links([geneSource(record.gene)])
+        : links(variantIds ?? []) || 'Variant';
+      return `### ${title}\n\n${literal(record.variant)}\n\n${record.fields.map(fieldLine).join('\n')}`;
+    });
   const parts = opening ? [opening] : [];
   if (sections.length && reference.genomeSource?.kind === 'example')
     parts.push(
       `These results are from the **${literal(reference.genomeSource.label)} public example genome**.`,
     );
-  else if (sections.length && reference.genomeSource?.kind === 'upload')
-    parts.push('These results are from **the genome file you uploaded**.');
   if (sections.length) parts.push(sections.join('\n\n---\n\n'));
   return parts.join('\n\n');
 }
