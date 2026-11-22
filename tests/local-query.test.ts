@@ -229,7 +229,7 @@ test('newest complete turns fit the budget; older turns are dropped whole with n
   const profile = { ...LOCAL_MODELS[0]!, contextWindowTokens: 6500 };
   const previous = [0, 1, 2].map((i) => ({
     question: 'question ' + i,
-    answer: String(i).repeat(1100),
+    answer: String(i).repeat(1600),
     records: [],
   }));
   const c = buildLocalQueryContext('Latest question', previous, {
@@ -240,7 +240,7 @@ test('newest complete turns fit the budget; older turns are dropped whole with n
   assert.equal(c.omittedHistoryTurns, 2);
   assert.deepEqual(c.messages.slice(1, -1), [
     { role: 'user', content: 'question 2' },
-    { role: 'assistant', content: '2'.repeat(1100) },
+    { role: 'assistant', content: previous[2]!.answer },
   ]);
   assert.ok(c.inputBytes <= c.inputByteLimit);
   assert.equal(c.responseTokenLimit, 9000);
