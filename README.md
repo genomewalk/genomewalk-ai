@@ -60,7 +60,7 @@ The build context is allowlisted. Checks and compilation run without network acc
 1. **Prepare once:** read the selected file in a worker, match exact supported alleles to the public catalog, and embed the matched annotations locally.
 2. **Understand the question:** the selected local model chooses Specific topic, All matches, or Other, using available conversation history.
 3. **Retrieve:** topic search orders matches by semantic similarity alone. Search text contains conditions, gene names and variant IDs; full annotations, including frequencies, remain available to the answer model. An overview orders all usable matches by catalog fields. Other answers without new retrieval.
-4. **Answer:** at most three new records enter the context, with complete earlier turns that fit. The model selects supplied record IDs and writes a short opening. The app displays the selected source facts and links unchanged.
+4. **Answer:** up to ten new candidates enter the selection context as identifiers and factual descriptions, with complete earlier turns that fit. The model selects up to three supplied record IDs and writes a short opening from their full source fields. The app displays the selected source facts and links unchanged.
 
 There are no question-keyword, gene-name, or disease-specific routing rules. General explanations use model knowledge; personal variant facts come from the verified reference. This design limits factual rewriting, but the generated opening and general answers can still be wrong.
 

@@ -1,7 +1,7 @@
 import type { ChatMessage, JourneyStep } from '../lib/session-types.ts';
 import { Disclosure } from './StepDetails.tsx';
 import { RequestDiagram } from './RequestDiagram.tsx';
-import { MAX_RECORDS } from '../config/evidence-answer.ts';
+import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
 
 export function RetrievalDetail({ message, step }: { message: ChatMessage; step: JourneyStep }) {
   const data = step.data;
@@ -9,7 +9,7 @@ export function RetrievalDetail({ message, step }: { message: ChatMessage; step:
   const considered = new Map(
     context?.consideredRows?.map((row) => [row.citation, row.status]) ?? [],
   );
-  const limit = context?.maxNewRecords ?? MAX_RECORDS;
+  const limit = context?.maxNewRecords ?? MAX_CANDIDATES;
   if (step.status === 'skipped')
     return (
       <>

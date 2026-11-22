@@ -187,7 +187,7 @@ test('readable input preserves actual evidence and every source link without int
       profile,
       plan,
     );
-    assert.equal(context.included, 3);
+    assert.equal(context.included, rows.length);
     assert.equal(context.evidence.matches[0]!.gene, 'SYNTHETIC5');
     assert.ok(context.inputBytes <= context.inputByteLimit);
     assert.ok(!JSON.stringify(context.messages).includes('SENTINEL'));
@@ -245,21 +245,21 @@ test('separate source lists never become invented condition-specific classificat
   assert.equal(Object.hasOwn(reference, 'conflictingClassifications'), false);
 });
 
-test('three-record default and explicit four-record budget share prompt, order and whole-record admission', () => {
+test('ten-candidate default and explicit smaller budget share prompt, order and whole-record admission', () => {
   const profile = getModelProfile('qwen3.5-9b');
-  const three = buildEmbeddingsContext('Compare', rows, result, profile, plan);
+  const ten = buildEmbeddingsContext('Compare', rows, result, profile, plan);
   const four = buildEmbeddingsContext('Compare', rows, result, profile, plan, [], {
     maxNewRecords: 4,
   });
-  assert.equal(three.maxNewRecords, 3);
-  assert.equal(three.included, 3);
+  assert.equal(ten.maxNewRecords, 10);
+  assert.equal(ten.included, rows.length);
   assert.equal(four.maxNewRecords, 4);
   assert.equal(four.included, 4);
-  assert.deepEqual(three.evidence.matches, four.evidence.matches.slice(0, 3));
-  assert.equal(three.messages[0]!.content, four.messages[0]!.content);
-  assert.equal(three.omitted, 2);
+  assert.deepEqual(ten.evidence.matches.slice(0, 4), four.evidence.matches);
+  assert.equal(ten.messages[0]!.content, four.messages[0]!.content);
+  assert.equal(ten.omitted, 0);
   assert.equal(four.omitted, 1);
-  for (const maxNewRecords of [0, 5, 2.5, '2']) {
+  for (const maxNewRecords of [0, 11, 2.5, '2']) {
     assert.throws(
       // @ts-expect-error Exercise invalid limits from an untyped caller.
       () => buildEmbeddingsContext('Compare', rows, result, profile, plan, [], { maxNewRecords }),
@@ -317,7 +317,15 @@ test('field descriptions keep calls, classification conflicts and unknown review
 test('context budgeting drops whole records and retains required private referents', () => {
   const profile = getModelProfile('qwen3-4b');
   const huge = { ...rows[0]!, conditions: 'Condition '.repeat(5000) };
-  const context = buildEmbeddingsContext('Review', [huge, ...rows.slice(1)], result, profile, plan);
+  const context = buildEmbeddingsContext(
+    'Review',
+    [huge, ...rows.slice(1)],
+    result,
+    profile,
+    plan,
+    [],
+    { maxNewRecords: 3 },
+  );
   assert.equal(context.consideredRows[0]!.status, 'context_budget');
   assert.equal(context.included, 2);
   assert.ok(
@@ -580,7 +588,7 @@ test('local mode uses real matching, isolated history and compact requests; no c
   const first = session.state.messages.at(-1)!;
   assert.equal(first!.status, 'complete');
   assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC1');
-  assert.equal(first!.context!.included, 3);
+  assert.equal(first!.context!.included, rows.length);
   assert.equal(first!.finishReason, 'stop');
   assert.equal(first!.question, 'Hearing?');
   assert.deepEqual(
@@ -674,7 +682,7 @@ test('local mode uses real matching, isolated history and compact requests; no c
   );
   assert.deepEqual(
     session.state.messages.at(-1)!.context!.evidence!.matches.map((r) => r.gene),
-    rows.slice(0, 3).map((r) => r.gene),
+    rows.map((r) => r.gene),
   );
   session.forget();
   assert.equal(session.state.indexReady, false);

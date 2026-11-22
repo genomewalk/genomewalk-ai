@@ -9,6 +9,7 @@ import {
   parseRecordSelection,
   renderRecordSelection,
   selectionSchema,
+  buildSelectionReference,
   buildEvidenceOpeningContext,
 } from '../src/lib/evidence-answer.ts';
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
@@ -37,6 +38,48 @@ const field = (record: ReferenceRecord | undefined, label: string) => {
   return found;
 };
 
+test('hybrid selection descriptions preserve source facts and IDs without changing answer evidence', () => {
+  const c = context(fixturePlan, fixtureRows);
+  const before = structuredClone(c.recordReference);
+  const hybrid = buildSelectionReference(c.recordReference);
+  const wire = JSON.parse(c.messages.at(-1)!.content).reference;
+  assert.deepEqual(wire, hybrid);
+  assert.deepEqual(c.recordReference, before);
+  assert.equal(hybrid.maxSelectedRecords, 3);
+  assert.match(hybrid.note, /not mapped to individual conditions/);
+  assert.match(hybrid.note, /no paper contents/);
+  for (const [index, record] of c.recordReference.records.entries()) {
+    const compact = hybrid.records[index]!;
+    assert.equal(compact.id, record.id);
+    assert.equal(compact.origin, record.origin);
+    assert.equal(compact.gene, record.gene);
+    assert.ok(compact.description.includes(record.variant));
+    for (const field of record.fields) {
+      if (field.text) assert.ok(compact.description.includes(field.text));
+      for (const item of field.items ?? []) if (item) assert.ok(compact.description.includes(item));
+    }
+  }
+  assert.deepEqual(hybrid.records[1]!.variant_ids, ['rs757362953']);
+  assert.match(hybrid.records[1]!.description, /ClinVar ID: 575366/);
+  assert.match(hybrid.records[1]!.description, /0\.000949274%/);
+  assert.match(hybrid.records[3]!.description, /PubMed ID: 19917125/);
+  assert.ok(!JSON.stringify(hybrid).includes('https://'));
+  assert.ok(JSON.stringify(hybrid).length < JSON.stringify(c.recordReference).length);
+  const chosen = { selected: ['v4'] };
+  const answer = renderRecordSelection(chosen, c.recordReference);
+  assert.ok(answer.includes('https://pubmed.ncbi.nlm.nih.gov/19917125/'));
+  const opening = buildEvidenceOpeningContext(
+    'Explain',
+    chosen,
+    c.recordReference,
+    LOCAL_MODELS[0]!,
+  );
+  assert.deepEqual(
+    JSON.parse(opening.messages.at(-1)!.content).reference.records[0].fields,
+    before.records[3]!.fields,
+  );
+});
+
 test('a short answer precedes complete source sections with exact fields, in review order', () => {
   const c = context();
   const [mixed, conflict] = c.recordReference.records;
@@ -61,7 +104,9 @@ test('a short answer precedes complete source sections with exact fields, in rev
         mixed!.variant,
     ),
   );
-  assert.equal(JSON.parse(c.messages[1]!.content).reference.records[0]!.variant, mixed!.variant);
+  assert.ok(
+    JSON.parse(c.messages[1]!.content).reference.records[0]!.description.includes(mixed!.variant),
+  );
   assert.deepEqual(
     JSON.parse(c.messages[1]!.content).scope,
     fixturePlan,
@@ -91,7 +136,7 @@ test('a short answer precedes complete source sections with exact fields, in rev
 
 test('schema accepts only valid whole-record IDs without prose or legacy fields', () => {
   const r = context().recordReference;
-  assert.deepEqual(selectionSchema(r).properties.selected.items.enum, ['v1', 'v2', 'v3']);
+  assert.deepEqual(selectionSchema(r).properties.selected.items.enum, ['v1', 'v2', 'v3', 'v4']);
   assert.deepEqual(selectionSchema(r).required, ['selected']);
   const valid = { selected: [] };
   for (const value of [

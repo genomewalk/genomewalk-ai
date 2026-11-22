@@ -103,6 +103,45 @@ export function selectionSchema(reference: RecordReference) {
   };
 }
 
+// Only the selector needs this smaller representation. Original fields and links
+// remain available for explanation and display, keyed by the same record IDs.
+export function buildSelectionReference(reference: RecordReference) {
+  return {
+    maxSelectedRecords: reference.maxSelectedRecords,
+    ...(reference.genomeSource ? { genomeSource: reference.genomeSource } : {}),
+    note: 'Classifications are not mapped to individual conditions. Publication links supply no paper contents.',
+    records: reference.records.map((record) => {
+      const variantIds = record.fields.find(
+        ({ label }) => label === 'Variant ID (dbSNP)' || label === 'Variant IDs (dbSNP)',
+      );
+      const sourceIds = new Set<string>();
+      for (const field of record.fields)
+        for (const source of field.sources) {
+          const id = new URL(source.url).pathname.split('/').filter(Boolean).at(-1);
+          if (source.label === 'ClinVar') sourceIds.add(`ClinVar ID: ${id}.`);
+          if (source.label.startsWith('PubMed ')) sourceIds.add(`PubMed ID: ${id}.`);
+        }
+      return {
+        id: record.id,
+        origin: record.origin,
+        gene: record.gene,
+        variant_ids: variantIds?.sources.map((source) => source.label) ?? [],
+        description: [
+          record.variant,
+          ...record.fields
+            .filter((field) => field !== variantIds)
+            .map((field) =>
+              field.items
+                ? `${field.label}: ${field.items.join('; ')}.`
+                : `${field.label}: ${field.text}`,
+            ),
+          ...sourceIds,
+        ].join(' '),
+      };
+    }),
+  };
+}
+
 export function selectionGeneration(reference: RecordReference): Generation {
   // Same JSON grammar configuration for every family. Full context/output cap
   // is retained; runtime thinking tags are not prepended outside the grammar.

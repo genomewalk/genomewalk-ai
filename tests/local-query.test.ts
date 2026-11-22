@@ -218,7 +218,7 @@ test('follow-ups and topic changes use conversation; only selected verified reco
   assert.ok(!JSON.stringify(reference).includes('UNVERIFIED_INTERPRETATION_SENTINEL'));
   assert.deepEqual(
     reference.records.map((r: { gene: string }) => r.gene),
-    ['FIXTURE1', 'FIXTURE2', 'FIXTURE3'],
+    rows.slice(0, 10).map((row) => row.gene),
     'Repeated source records are deduplicated',
   );
   assert.equal(h.session.state.messages.at(-1)!.context!.historyTurns, 2);
@@ -314,7 +314,7 @@ test('unfinished general answers and invalid record selections never enter follo
   }
 });
 
-test('topic search uses similarity alone before admitting three new records', async () => {
+test('topic search uses similarity alone before admitting ten new candidates', async () => {
   const records = rows.map((row) => ({ ...row }));
   records[1]! = { ...records[1]!, sig: 'P', stars: 2, classification: 'Pathogenic' };
   records[2]! = { ...records[2]!, sig: 'P', stars: 3, classification: 'Pathogenic' };
@@ -330,7 +330,7 @@ test('topic search uses similarity alone before admitting three new records', as
   );
   assert.deepEqual(
     message!.context!.evidence!.matches.map((record) => record.gene),
-    ['FIXTURE1', 'FIXTURE2', 'FIXTURE3'],
+    records.slice(0, 10).map((row) => row.gene),
   );
   assert.ok(
     ranking!.scores!.some((hit) => hit.index === 29),

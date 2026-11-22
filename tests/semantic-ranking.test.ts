@@ -3,7 +3,7 @@ import { fakeEngine, fakeSearch } from './helpers/inference.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rankSemantic } from '../src/lib/evidence-ranking.ts';
-import { MAX_RECORDS } from '../src/config/evidence-answer.ts';
+import { MAX_CANDIDATES, MAX_RECORDS } from '../src/config/evidence-answer.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { EMBEDDINGS_ANSWER_PROMPT, EVIDENCE_OPENING_PROMPT } from '../src/prompts/embeddings.ts';
@@ -115,7 +115,7 @@ test('partial pools, duplicate indices and invalid similarities fail visibly', (
   assert.deepEqual(rankSemantic([], []), []);
 });
 
-test('session admits and displays three records with shared prompts, history and Other bypass', async () => {
+test('session admits ten candidates and displays three selections with shared prompts and Other bypass', async () => {
   const requests: ModelRequest[] = [];
   const operations: string[] = [];
   let plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
@@ -157,8 +157,8 @@ test('session admits and displays three records with shared prompts, history and
   await session.send('First question');
   assert.equal(session.state.error, null);
   const first = session.state.messages.at(-1)!;
-  assert.equal(first!.context!.included, 3);
-  assert.equal(first!.context!.maxNewRecords, MAX_RECORDS);
+  assert.equal(first!.context!.included, MAX_CANDIDATES);
+  assert.equal(first!.context!.maxNewRecords, MAX_CANDIDATES);
   assert.equal(first!.context!.recordReference!.maxSelectedRecords, MAX_RECORDS);
   assert.equal(JSON.parse(requests[1]!.response_format!.schema!).properties.selected.maxItems, 3);
   assert.equal(first!.answerSelection!.selected.length, 3);
@@ -201,7 +201,9 @@ test('session admits and displays three records with shared prompts, history and
 test('three-record default covers new and earlier selections', () => {
   const profile = getModelProfile('qwen3.5-9b'),
     plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
-  const first = buildEmbeddingsContext('First', records, result, profile, plan);
+  const first = buildEmbeddingsContext('First', records, result, profile, plan, [], {
+    maxNewRecords: MAX_RECORDS,
+  });
   const history = [
     { question: 'First', answer: 'Earlier source records', records: first.evidence.matches },
   ];
@@ -252,7 +254,9 @@ test('three-record default covers new and earlier selections', () => {
 test('recent verified records survive when new candidates would crowd out the last turn', () => {
   const plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
   const fullProfile = getModelProfile('qwen3.5-9b');
-  const initial = buildEmbeddingsContext('First', records, result, fullProfile, plan);
+  const initial = buildEmbeddingsContext('First', records, result, fullProfile, plan, [], {
+    maxNewRecords: MAX_RECORDS,
+  });
   const history = [
     { question: 'First', answer: 'Earlier findings', records: initial.evidence.matches },
   ];

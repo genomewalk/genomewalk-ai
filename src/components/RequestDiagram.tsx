@@ -3,7 +3,7 @@ import type { ChatMessage, JourneyStep, StepId } from '../lib/session-types.ts';
 import { useId } from 'react';
 import { PreparationIcon as Icon } from './PreparationIcons.tsx';
 import { PLAN_LABELS } from '../config/search-scope.ts';
-import { MAX_RECORDS } from '../config/evidence-answer.ts';
+import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
 import { STEP_STATUS } from './RequestProgress.tsx';
 import iconLicense from '../assets/lucide-license.txt?raw';
 
@@ -47,7 +47,7 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
         : `${count(steps.semantic.data?.total)} matches considered`,
       detail: general
         ? ['Use the question and conversation.']
-        : [`Up to ${context?.maxNewRecords ?? MAX_RECORDS} new records for the answer.`],
+        : [`Up to ${context?.maxNewRecords ?? MAX_CANDIDATES} new records for the answer.`],
     },
     {
       step: steps.context,
