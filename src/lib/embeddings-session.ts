@@ -1,7 +1,6 @@
 import type {
   GenomeSource,
   GenomeConfig,
-  Weights,
   SearchClient,
   ModelLease,
   SearchPlan,
@@ -37,17 +36,12 @@ import { loadCatalogKeys, hydrateGenomewalkMatches } from './local-catalog.ts';
 import { searchDocument } from './semantic-search.ts';
 import { buildEmbeddingsContext } from './embeddings-context.ts';
 import { compactMatch } from './match-reference.ts';
-import { rankCombined, rankCatalogOverview } from './evidence-ranking.ts';
+import { rankSemantic, rankCatalogOverview } from './evidence-ranking.ts';
 import { createEmbeddingsJourney, updateJourney, finishJourney } from './request-journey.ts';
 import { EMBEDDING_MODEL, RETRIEVAL } from '../config/embeddings.ts';
 import { PLAN_LABELS } from '../config/search-scope.ts';
 import { parseLocalQuery, buildLocalQueryContext } from './local-query.ts';
-import {
-  DEFAULT_WEIGHTS,
-  FORMULA,
-  PREVIEW_LIMIT,
-  validateWeights,
-} from '../config/evidence-ranking.ts';
+import { PREVIEW_LIMIT } from '../config/evidence-ranking.ts';
 import { MatchCache, matchCacheIdentity } from './match-cache.ts';
 import {
   parseRecordSelection,
@@ -109,7 +103,6 @@ export class EmbeddingsSession {
     this.history = [];
     this.prepared = null;
     this.state = {
-      weights: { ...DEFAULT_WEIGHTS },
       phase: 'idle',
       busy: false,
       activity: null,
@@ -126,9 +119,6 @@ export class EmbeddingsSession {
       excludedCount: 0,
       matchCacheInfo: null,
     };
-  }
-  setWeights(weights: Weights) {
-    this.update({ weights: validateWeights(weights) });
   }
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
@@ -623,7 +613,6 @@ export class EmbeddingsSession {
     return true;
   }
   async retrieve(prepared: PreparedIndex, plan: SearchPlan, signal: AbortSignal, id: number) {
-    const weights = { ...this.state.weights };
     const matches = prepared.result.matches;
     this.step(id, 'semantic', {
       status: 'running',
@@ -634,7 +623,7 @@ export class EmbeddingsSession {
     if (plan.mode === 'search') {
       const scores = await this.search.call('score', { query: plan.query }, { signal });
       signal?.throwIfAborted();
-      ordered = rankCombined(scores, matches, weights);
+      ordered = rankSemantic(scores, matches);
     } else {
       ordered = rankCatalogOverview(matches);
     }
@@ -645,17 +634,19 @@ export class EmbeddingsSession {
     }));
     this.step(id, 'semantic', {
       status: 'complete',
-      summary: `${matches.length.toLocaleString()} matches considered · ${plan.mode === 'search' ? 'one combined score' : 'catalog overview'}`,
+      summary: `${matches.length.toLocaleString()} matches considered · ${plan.mode === 'search' ? 'semantic similarity' : 'catalog overview'}`,
       data: {
         mode: plan.mode,
         query: plan.query,
-        weights,
-        formula: plan.mode === 'search' ? FORMULA : 'Classification → review stars → catalog order',
+        formula:
+          plan.mode === 'search'
+            ? 'Semantic similarity'
+            : 'Classification → review stars → catalog order',
         total: matches.length,
         rows,
         scores: ordered,
         previewLimit: PREVIEW_LIMIT,
-        note: 'App review weights, not learned weights or probabilities. All usable matches are considered before the answer-context limit.',
+        note: 'All usable matches are considered before the answer-context limit. Topic searches use similarity only; overviews use catalog classification and review stars.',
       },
     });
     return ordered.map((hit) => matches[hit.index]!);

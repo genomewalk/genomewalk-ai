@@ -11,7 +11,6 @@ import type {
   SearchPlan,
   RecordSelection,
   GenomeProvenance,
-  Weights,
 } from './types.ts';
 import type { compactMatch } from './match-reference.ts';
 import type { catalogPriority } from './evidence-ranking.ts';
@@ -28,10 +27,6 @@ export interface RankedHit {
   priority: ReturnType<typeof catalogPriority>;
   similarity?: number;
   score?: number;
-  classValue?: number;
-  reviewValue?: number;
-  classificationContribution?: number;
-  reviewContribution?: number;
 }
 export interface RankedRecord extends RankedHit {
   record: ReturnType<typeof compactMatch>;
@@ -64,7 +59,6 @@ export interface StepData extends Partial<AnswerContext> {
   decisionSource?: string;
   mode?: SearchPlan['mode'];
   query?: string;
-  weights?: Weights;
   formula?: string;
   rows?: RankedRecord[];
   scores?: RankedHit[];
@@ -121,7 +115,6 @@ export interface PreparedIndex {
   documents: string[];
 }
 export interface EmbeddingsState {
-  weights: Weights;
   phase: 'idle' | 'checking' | 'ready' | 'stopped' | 'error';
   busy: boolean;
   activity: 'preparing' | 'answering' | null;

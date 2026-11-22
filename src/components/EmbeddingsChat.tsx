@@ -7,7 +7,6 @@ import { ModelStatus } from './ModelStatus.tsx';
 import { MessageList } from './MessageList.tsx';
 import { ChatInput } from './ChatInput.tsx';
 import { GenomeSetup, PreparationProgress } from './GenomeSetup.tsx';
-import { RankingSettings } from './RankingSettings.tsx';
 
 export function EmbeddingsChat() {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
@@ -58,11 +57,6 @@ export function EmbeddingsChat() {
           state={local}
           disabled={state.activity === 'answering'}
           onSelect={(id) => localModelSession.selectModel(id)}
-        />
-        <RankingSettings
-          weights={state.weights}
-          busy={state.busy}
-          onChange={(weights) => session.setWeights(weights)}
         />
         <div className="sidebar-bottom">
           <div className="privacy-note">

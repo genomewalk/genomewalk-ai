@@ -68,13 +68,17 @@ export function buildEmbeddingsContext(
       ),
     };
   };
-  // Reserve the current question and configured new-record allowance before history.
-  fitConversation([], profile, build);
+  // Reserve the latest complete turn before adding new candidates. This keeps
+  // recent source records available without detecting follow-ups from keywords.
+  // A turn that cannot fit on its own is still omitted whole by fitConversation.
+  const recent = plan.mode === 'search' ? previous.slice(-1) : [];
+  const reservedTurns = fitConversation(recent, profile, build).historyTurns;
   for (const row of rows.slice(0, maxNewRecords)) {
     matches.push(compactMatch(row));
     let status = 'included';
     try {
-      fitConversation([], profile, build);
+      if (fitConversation(recent, profile, build).historyTurns < reservedTurns)
+        throw new Error('New records would displace the reserved conversation turn.');
     } catch {
       matches.pop();
       status = 'context_budget';

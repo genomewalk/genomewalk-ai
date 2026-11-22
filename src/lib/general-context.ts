@@ -10,6 +10,6 @@ export function buildGeneralContext(
 ) {
   return fitConversation(previous, profile, (history) => ({
     messages: conversationMessages(GENERAL_ANSWER_PROMPT, question, history),
-    generation: { temperature: 0.2, top_p: 0.8, presence_penalty: 0, repetition_penalty: 1 },
+    generation: { presence_penalty: 0, repetition_penalty: 1 },
   }));
 }

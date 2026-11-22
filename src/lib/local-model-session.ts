@@ -208,7 +208,7 @@ export class LocalModelSession {
     try {
       await engine.reset();
       signal?.throwIfAborted();
-      const request = { ...localModelRequest(profile, messages), ...generation };
+      const request = localModelRequest(profile, messages, generation);
       onRequest(request);
       for await (const chunk of engine.complete(request)) {
         signal?.throwIfAborted();

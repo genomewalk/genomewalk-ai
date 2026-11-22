@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { catalogPriority, rankCatalogOverview, rankCombined } from '../src/lib/evidence-ranking.ts';
+import { catalogPriority, rankCatalogOverview, rankSemantic } from '../src/lib/evidence-ranking.ts';
 
 test('overview uses classification, stars and catalog row order across the entire pool', () => {
   const records = [
@@ -24,13 +24,14 @@ test('overview uses classification, stars and catalog row order across the entir
   assert.deepEqual(rankCatalogOverview([]), []);
 });
 
-test('catalog features preserve the configured class values without parsing prose', () => {
-  const values = ['P', 'PLP', 'LP', 'C', 'O'].map((sig) => catalogPriority({ sig }).classValue);
-  assert.deepEqual(values, [1, 1, 0.75, 0.5, 0.25]);
+test('catalog features preserve the configured classification order without parsing prose', () => {
+  const values = ['P', 'PLP', 'LP', 'C', 'O'].map(
+    (sig) => catalogPriority({ sig }).classificationOrder,
+  );
+  assert.deepEqual(values, [0, 0, 1, 2, 3]);
   for (const sig of [undefined, '', 'p', ' P ', 'Pathogenic', 'toString']) {
     const priority = catalogPriority({ sig, classification: 'Pathogenic', stars: 4 });
     assert.equal(priority.classificationOrder, 4);
-    assert.equal(priority.classValue, 0);
   }
   const records = [undefined, null, '', '4', -1, 5, 1.5, NaN, 0].map((stars) => ({
     sig: 'P',
@@ -45,7 +46,7 @@ test('catalog features preserve the configured class values without parsing pros
   assert.ok(ranked.slice(1).every((r) => r.priority.reviewStars === null));
 });
 
-test('gene, condition, frequency and genotype cannot change field-based overview order or boosts', () => {
+test('gene, condition, frequency and genotype cannot change field-based overview order', () => {
   const records = [
     { sig: 'C', stars: 1 },
     { sig: 'P', stars: 2 },
@@ -63,5 +64,5 @@ test('gene, condition, frequency and genotype cannot change field-based overview
   }));
   assert.deepEqual(rankCatalogOverview(changed), rankCatalogOverview(records));
   const scores = records.map((_, index) => ({ index, similarity: 0.5 }));
-  assert.deepEqual(rankCombined(scores, changed), rankCombined(scores, records));
+  assert.deepEqual(rankSemantic(scores, changed), rankSemantic(scores, records));
 });

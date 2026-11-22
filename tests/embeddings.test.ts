@@ -115,7 +115,7 @@ const publicFetch: Fetcher = async (url) => {
   throw new Error(`Unexpected public request: ${url}`);
 };
 
-test('cosine similarity checks vectors and search documents exclude genotypes', () => {
+test('semantic documents exclude allele calls and exclude frequencies, classification and review from relevance', () => {
   assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
   assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
   assert.ok(cosineSimilarity([1, 0], [0.8, 0.2]) > 0.9);
@@ -123,6 +123,28 @@ test('cosine similarity checks vectors and search documents exclude genotypes', 
   assert.throws(() => cosineSimilarity([0, 0], [1, 0]), /Invalid/);
   assert.ok(!searchDocument(rows[0]!).includes('0/1'));
   assert.match(searchDocument(rows[0]!), /Inherited hearing loss/);
+  assert.equal(
+    searchDocument({ gene: 'GENE1', rsids: '123|rs456', conditions: 'Condition_1|Condition 2' }),
+    'Conditions: Condition 1; Condition 2. Gene: GENE1. Variant: rs123, rs456.',
+  );
+  assert.equal(searchDocument({ gene: 'GENE1' }), 'Gene: GENE1.');
+  assert.equal(searchDocument({ rsids: '123' }), 'Variant: rs123.');
+  assert.equal(
+    searchDocument({
+      ...rows[0]!,
+      alt: 'G',
+      sig: 'P',
+      classification: 'Pathogenic',
+      conflictingclassifications: '',
+      stars: 4,
+      reviewstatus: 'reviewed_by_expert_panel',
+      af: '.99',
+      afmax: '.999',
+      grp: 'afr',
+    }),
+    searchDocument(rows[0]!),
+    'Changing allele calls, frequencies, classification and review must not change the embedding text',
+  );
 });
 
 test('readable input preserves actual evidence and every source link without internal metadata or repeated raw fields', () => {
@@ -605,7 +627,6 @@ test('local mode uses real matching, isolated history and compact requests; no c
     first!.journey!.steps.find((s) => s.id === 'semantic')!.data!.rows![0]!.priority,
     {
       sig: 'C',
-      classValue: 0.5,
       classification: 'Conflicting classifications',
       classificationOrder: 2,
       reviewStars: 1,

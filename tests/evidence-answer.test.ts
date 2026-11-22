@@ -2,6 +2,7 @@ import type { SearchPlan, ReferenceRecord, RecordReference, SourceLink } from '.
 import type { ConversationTurn } from '../src/lib/conversation-context.ts';
 import { compactMatch } from '../src/lib/match-reference.ts';
 import test from 'node:test';
+import { localModelRequest } from '../src/lib/local-model-request.ts';
 import assert from 'node:assert/strict';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
 import {
@@ -220,7 +221,10 @@ test('all models share the record-selection contract and full configured context
     );
     assert.equal(c.messages[0]!.content, context().messages[0]!.content);
     assert.deepEqual(c.generation, context().generation);
-    assert.equal(c.generation.temperature, 0);
+    const request = localModelRequest(model, c.messages, c.generation);
+    assert.equal(request.temperature, 0);
+    assert.equal(request.top_p, 1);
+    assert.equal(request.seed, 42);
     assert.deepEqual('extra_body' in c.generation ? c.generation.extra_body : undefined, {});
     assert.ok(!Object.hasOwn(c.generation, 'max_tokens'));
     assert.equal(c.responseTokenLimit, model.contextWindowTokens);

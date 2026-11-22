@@ -314,7 +314,7 @@ test('unfinished general answers and invalid record selections never enter follo
   }
 });
 
-test('topic search combines similarity and catalog fields before admitting three new records', async () => {
+test('topic search uses similarity alone before admitting three new records', async () => {
   const records = rows.map((row) => ({ ...row }));
   records[1]! = { ...records[1]!, sig: 'P', stars: 2, classification: 'Pathogenic' };
   records[2]! = { ...records[2]!, sig: 'P', stars: 3, classification: 'Pathogenic' };
@@ -326,11 +326,11 @@ test('topic search combines similarity and catalog fields before admitting three
     ranking = message!.journey!.steps.find((step) => step.id === 'semantic')!.data;
   assert.deepEqual(
     ranking!.rows!.slice(0, 3).map((hit) => hit.index),
-    [1, 2, 3],
+    [0, 1, 2],
   );
   assert.deepEqual(
     message!.context!.evidence!.matches.map((record) => record.gene),
-    ['FIXTURE2', 'FIXTURE3', 'FIXTURE4'],
+    ['FIXTURE1', 'FIXTURE2', 'FIXTURE3'],
   );
   assert.ok(
     ranking!.scores!.some((hit) => hit.index === 29),

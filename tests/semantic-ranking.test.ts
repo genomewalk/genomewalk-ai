@@ -2,8 +2,7 @@ import type { ModelRequest, SearchPlan } from '../src/lib/types.ts';
 import { fakeEngine, fakeSearch } from './helpers/inference.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rankCombined } from '../src/lib/evidence-ranking.ts';
-import { DEFAULT_WEIGHTS } from '../src/config/evidence-ranking.ts';
+import { rankSemantic } from '../src/lib/evidence-ranking.ts';
 import { MAX_RECORDS } from '../src/config/evidence-answer.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
@@ -53,59 +52,37 @@ const prepared = {
   documents: records.map((row) => row.gene),
 };
 
-test('combined score can retrieve a record below the old top-24 cutoff without altering evidence', () => {
+test('semantic ranking scores the full pool without boosting classification or review', () => {
   const before = structuredClone({ records, hits });
-  const ordered = rankCombined(hits, records);
+  const ordered = rankSemantic([...hits].reverse(), records);
   assert.equal(ordered.length, records.length);
-  assert.equal(ordered[0]!.index, 29);
-  assert.ok(hits.slice(0, 24).every((hit) => hit.index !== 29));
+  assert.deepEqual(
+    ordered.map((hit) => hit.index),
+    hits.map((hit) => hit.index),
+  );
+  assert.equal(
+    ordered.at(-1)!.index,
+    29,
+    'Pathogenic classification cannot displace a better topic match',
+  );
+  const changed = records.map((row) => ({ ...row, sig: 'P', stars: 4 }));
+  assert.deepEqual(
+    rankSemantic(hits, changed).map((hit) => hit.index),
+    ordered.map((hit) => hit.index),
+  );
+  assert.ok(ordered.every((hit) => hit.score === hit.similarity));
   assert.deepEqual({ records, hits }, before);
 });
 
-test('zero boosts produce pure similarity order; default boosts cannot overcome a larger semantic gap', () => {
-  assert.deepEqual(
-    rankCombined([...hits].reverse(), records, { classification: 0, review: 0 }).map(
-      (hit) => hit.index,
-    ),
-    hits.map((hit) => hit.index),
-  );
-  const ordered = rankCombined(
-    [
-      { index: 0, similarity: 0.9 },
-      { index: 1, similarity: 0.5 },
-    ],
-    [
-      { sig: 'C', stars: 0 },
-      { sig: 'P', stars: 4 },
-    ],
-  );
-  assert.equal(ordered[0]!.index, 0);
-  assert.ok(
-    ordered.every(
-      (hit) =>
-        hit.classificationContribution + hit.reviewContribution <=
-        DEFAULT_WEIGHTS.classification + DEFAULT_WEIGHTS.review,
-    ),
-  );
-});
-
-test('only exact fields affect boosts; unknown fields and zero stars remain distinguishable in the trace', () => {
-  const changed = records.map((row) => ({
-    ...row,
-    gene: 'Different',
-    conditions: 'Pathogenic hearing cancer',
-    af: '.999',
-    classification: 'Misleading prose',
-  }));
-  assert.deepEqual(rankCombined(hits, changed), rankCombined(hits, records));
-  const ordered = rankCombined(
+test('exact similarity ties use catalog order, while missing review information remains visible', () => {
+  const ordered = rankSemantic(
     [
       { index: 0, similarity: 0.5 },
       { index: 1, similarity: 0.5 },
     ],
     [
-      { sig: '__proto__', stars: null, rowNumber: 10 },
-      { sig: 'unknown', stars: 0, rowNumber: 5 },
+      { sig: 'P', stars: 4, rowNumber: 10 },
+      { sig: 'unknown', stars: null, rowNumber: 5 },
     ],
   );
   assert.deepEqual(
@@ -114,36 +91,28 @@ test('only exact fields affect boosts; unknown fields and zero stars remain dist
   );
   assert.deepEqual(
     ordered.map((hit) => hit.priority.reviewStars),
-    [0, null],
-  );
-  assert.ok(
-    ordered.every((hit) => hit.classificationContribution === 0 && hit.reviewContribution === 0),
+    [null, 4],
   );
 });
 
-test('partial pools, duplicate scores, invalid values and invalid weights fail visibly', () => {
-  assert.throws(() => rankCombined(hits.slice(0, 24), records), /every usable match/);
+test('partial pools, duplicate indices and invalid similarities fail visibly', () => {
+  assert.throws(() => rankSemantic(hits.slice(0, 24), records), /every usable match/);
   for (const value of [NaN, Infinity, undefined])
     // @ts-expect-error Runtime validation rejects missing scores.
-    assert.throws(() => rankCombined([{ index: 0, similarity: value }], [records[0]!]), /Invalid/);
-  assert.throws(
-    () =>
-      rankCombined(
-        [
-          { index: 0, similarity: 0.5 },
-          { index: 0, similarity: 0.4 },
-        ],
-        records.slice(0, 2),
-      ),
-    /Invalid/,
-  );
-  for (const value of [-1, 1.01, NaN, '0.1'])
+    assert.throws(() => rankSemantic([{ index: 0, similarity: value }], [records[0]!]), /Invalid/);
+  for (const index of [-1, 0, 3, 0.5])
     assert.throws(
-      // @ts-expect-error Deliberately test invalid weights from an untyped caller.
-      () => rankCombined(hits, records, { classification: value, review: 0.02 }),
-      /weights/,
+      () =>
+        rankSemantic(
+          [
+            { index: 0, similarity: 0.5 },
+            { index, similarity: 0.4 },
+          ],
+          records.slice(0, 2),
+        ),
+      /Invalid/,
     );
-  assert.deepEqual(rankCombined([], []), []);
+  assert.deepEqual(rankSemantic([], []), []);
 });
 
 test('session admits and displays three records with shared prompts, history and Other bypass', async () => {
@@ -196,7 +165,7 @@ test('session admits and displays three records with shared prompts, history and
   assert.equal(first!.content.split('**Overall frequency:**').length - 1, 3);
   assert.equal(JSON.parse(requests[2]!.messages.at(-1)!.content).reference.records.length, 3);
   assert.equal(first!.context!.evidence!.coverage.currentTurn.retrievedCandidates, 30);
-  assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC29');
+  assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
   assert.equal(
     first!.journey!.steps.some((step) => String(step.id) === 'ranking'),
     false,
@@ -207,17 +176,16 @@ test('session admits and displays three records with shared prompts, history and
   );
   assert.equal(requests[1]!.messages[0]!.content, EMBEDDINGS_ANSWER_PROMPT);
   assert.equal(requests[2]!.messages[0]!.content, EVIDENCE_OPENING_PROMPT);
-  session.setWeights({ classification: 0, review: 0 });
   plan = { mode: 'search', query: 'another topic resolved by planner' };
   await session.send('Follow-up or topic change');
   const follow = session.state.messages.at(-1)!;
   assert.equal(session.state.error, null);
   assert.equal(follow!.context!.historyTurns, 1);
   assert.equal(follow!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
-  assert.equal(follow!.context!.evidence!.earlierMatches[0]!.gene, 'SYNTHETIC29');
-  assert.deepEqual(
-    first!.journey!.steps.find((step) => step.id === 'semantic')!.data!.weights,
-    DEFAULT_WEIGHTS,
+  assert.equal(
+    follow!.context!.evidence!.earlierMatches.length,
+    0,
+    'Repeated records are deduplicated',
   );
   plan = { mode: 'overview', query: '' };
   await session.send('Whole pool');
@@ -279,6 +247,32 @@ test('three-record default covers new and earlier selections', () => {
         }),
       /Selected-record limit/,
     );
+});
+
+test('recent verified records survive when new candidates would crowd out the last turn', () => {
+  const plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
+  const fullProfile = getModelProfile('qwen3.5-9b');
+  const initial = buildEmbeddingsContext('First', records, result, fullProfile, plan);
+  const history = [
+    { question: 'First', answer: 'Earlier findings', records: initial.evidence.matches },
+  ];
+  const reserved = buildEmbeddingsContext('Follow up', [], result, fullProfile, plan, history);
+  // A valid budget that fits the complete recent turn, but not three more records.
+  const profile = { ...fullProfile, contextWindowTokens: reserved.inputBytes + 4096 + 768 + 500 };
+  const fresh = buildEmbeddingsContext('Follow up', records.slice(3), result, profile, plan);
+  const follow = buildEmbeddingsContext(
+    'Follow up',
+    records.slice(3),
+    result,
+    profile,
+    plan,
+    history,
+  );
+  assert.equal(follow.historyTurns, 1);
+  assert.deepEqual(follow.evidence.earlierMatches, history[0]!.records);
+  assert.ok(fresh.included > follow.included);
+  assert.ok(follow.consideredRows.some((row) => row.status === 'context_budget'));
+  assert.ok(follow.inputBytes <= follow.inputByteLimit);
 });
 
 test('a third record exceeding the context budget is omitted whole without taking a lower-ranked substitute', () => {

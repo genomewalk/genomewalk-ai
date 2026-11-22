@@ -41,7 +41,7 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
         ? ['No new search of your genome.']
         : plan?.mode === 'overview'
           ? ['Order the full match pool by', 'classification and review stars.']
-          : ['Combine meaning, classification', 'and review stars.'],
+          : ['Order matches by similarity', 'to the search topic.'],
       value: general
         ? 'No new variant records'
         : `${count(steps.semantic.data?.total)} matches considered`,

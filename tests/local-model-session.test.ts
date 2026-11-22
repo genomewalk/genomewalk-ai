@@ -332,6 +332,29 @@ test('inference streams unmodified chunks and resets KV state between explicit r
   assert.equal('history' in f.session, false, 'Conversation history belongs to EmbeddingsSession');
 });
 
+test('all inference stages share sampling while retaining their own limits and grammar', async () => {
+  const f = fixture();
+  await f.session.initialize();
+  const response_format = { type: 'json_object' as const, schema: '{"type":"object"}' };
+  for (const generation of [
+    {},
+    { temperature: 0.2, top_p: 0.8, seed: 99, max_tokens: 512 },
+    { response_format, extra_body: {}, max_tokens: 256 },
+  ]) {
+    await collect(
+      f.session.completePrivate([{ role: 'user', content: 'Question' }], { generation }),
+    );
+    const request = f.requests.at(-1)!;
+    assert.equal(request.temperature, 0);
+    assert.equal(request.top_p, 1);
+    assert.equal(request.seed, 42);
+    assert.equal(request.max_tokens, generation.max_tokens ?? 131072);
+    assert.deepEqual(request.response_format, generation.response_format);
+  }
+  assert.equal(f.calls.reset, 6);
+  f.session.dispose();
+});
+
 test('fatal worker failure unlocks the runtime and rejects late stream output', async () => {
   const gate = deferred();
   const f = fixture({

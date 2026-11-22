@@ -107,8 +107,6 @@ export function selectionGeneration(reference: RecordReference): Generation {
   // Same JSON grammar configuration for every family. Full context/output cap
   // is retained; runtime thinking tags are not prepended outside the grammar.
   return {
-    temperature: 0,
-    top_p: 1,
     presence_penalty: 0,
     repetition_penalty: 1,
     extra_body: {},
@@ -207,8 +205,6 @@ export function buildEvidenceOpeningContext(
     ),
     generation: {
       max_tokens: EVIDENCE_OPENING.maxTokens,
-      temperature: 0.2,
-      top_p: 0.8,
       presence_penalty: 0,
       repetition_penalty: 1,
     },

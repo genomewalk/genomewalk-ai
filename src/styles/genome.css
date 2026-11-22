@@ -332,31 +332,3 @@
     gap: 8px 14px;
   }
 }
-
-.ranking-settings {
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-}
-.ranking-settings summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-.ranking-settings p {
-  color: var(--muted);
-  line-height: 1.6;
-}
-.ranking-settings label {
-  display: block;
-  margin: 18px 0;
-}
-.ranking-settings label > span {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.ranking-settings input {
-  width: 100%;
-  accent-color: var(--ink);
-}

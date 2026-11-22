@@ -16,8 +16,6 @@ export const RETRIEVAL = Object.freeze({ batchSize: 8, documentTokens: 256 });
 // enable_thinking:false prepends literal <think> tags OUTSIDE that grammar.
 // Omit that convenience prefix for planning; never repair the returned JSON.
 export const QUERY_GENERATION: Generation = Object.freeze({
-  temperature: 0,
-  top_p: 1,
   presence_penalty: 0,
   repetition_penalty: 1,
   max_tokens: 512,

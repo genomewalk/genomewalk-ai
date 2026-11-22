@@ -207,10 +207,6 @@ export interface RecordReference {
 export interface RecordSelection {
   selected: string[];
 }
-export interface Weights {
-  classification: number;
-  review: number;
-}
 export interface SemanticHit {
   index: number;
   similarity: number;

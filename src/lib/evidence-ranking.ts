@@ -1,10 +1,5 @@
-import type { SemanticHit, Weights } from './types.ts';
-import {
-  CATALOG_CLASS_PRIORITY,
-  UNKNOWN_CLASS_PRIORITY,
-  DEFAULT_WEIGHTS,
-  validateWeights,
-} from '../config/evidence-ranking.ts';
+import type { SemanticHit } from './types.ts';
+import { CATALOG_CLASS_PRIORITY, UNKNOWN_CLASS_PRIORITY } from '../config/evidence-ranking.ts';
 
 interface RankingFields {
   sig?: unknown;
@@ -18,7 +13,6 @@ export function catalogPriority<T extends RankingFields>(row: T) {
       : UNKNOWN_CLASS_PRIORITY;
   return {
     sig: row.sig ?? null,
-    classValue: category.value,
     classification: category.label,
     classificationOrder: category.order,
     reviewStars:
@@ -45,15 +39,10 @@ export function rankCatalogOverview<T extends RankingFields>(records: T[]) {
     .map((hit, index) => ({ ...hit, rank: index + 1 }));
 }
 
-// One combined sort over all usable matches. No question text enters this function.
-export function rankCombined<T extends RankingFields>(
-  hits: SemanticHit[],
-  records: T[],
-  weights: Weights = DEFAULT_WEIGHTS,
-) {
-  const selectedWeights = validateWeights(weights);
+// Topic relevance is cosine similarity only. Catalog order breaks exact ties.
+export function rankSemantic<T extends RankingFields>(hits: SemanticHit[], records: T[]) {
   if (hits.length !== records.length)
-    throw new Error('Combined ranking requires scores for every usable match.');
+    throw new Error('Semantic ranking requires scores for every usable match.');
   const seen = new Set();
   return hits
     .map((hit) => {
@@ -68,19 +57,11 @@ export function rankCombined<T extends RankingFields>(
       seen.add(hit.index);
       const row = records[hit.index]!;
       const priority = catalogPriority(row);
-      const classValue = priority.classValue;
-      const reviewValue = (priority.reviewStars ?? 0) / 4;
-      const classificationContribution = selectedWeights.classification * classValue;
-      const reviewContribution = selectedWeights.review * reviewValue;
       return {
         index: hit.index,
         similarity: hit.similarity,
         priority,
-        classValue,
-        reviewValue,
-        classificationContribution,
-        reviewContribution,
-        score: hit.similarity + classificationContribution + reviewContribution,
+        score: hit.similarity,
       };
     })
     .sort(

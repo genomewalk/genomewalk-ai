@@ -28,7 +28,7 @@ export function RetrievalDetail({ message, step }: { message: ChatMessage; step:
           message.journey?.steps.find((item) => item.id === 'query')?.data?.response?.mode) ===
         'overview'
           ? 'For an overview, the app considers the whole pool of usable genome matches and orders it by ClinVar classification, then review stars. No topic search is needed.'
-          : 'The local embedding model compares the meaning of the search text with your indexed matches. The app combines that similarity with ClinVar classification and review stars to order the records in one pass.'}{' '}
+          : 'The local embedding model compares the meaning of the search text with your indexed matches. Records are ordered by that similarity. Classification and review information remain available in each record.'}{' '}
         Up to {limit} new records are prepared for the answer, as space allows. This order helps
         choose records to review; it does not measure personal risk.
       </p>
