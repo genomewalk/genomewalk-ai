@@ -18,7 +18,7 @@ test('each profile uses the pinned WebLLM weights and compatible WASM with its c
     'llama-3.2-1b': { library: 'Llama-3.2-1B-Instruct-q4f16_1_cs1k-webgpu.wasm', context: 131072 },
     'llama-3.2-3b': { library: 'Llama-3.2-3B-Instruct-q4f16_1_cs1k-webgpu.wasm', context: 131072 },
     'qwen3-4b': { library: 'Qwen3-4B-q4f16_1_cs1k-webgpu.wasm', context: 32768 },
-    'qwen3.5-9b': { library: 'Qwen3.5-9B-q4f16_1_cs1k-webgpu.wasm', context: 131072 },
+    'qwen3.5-9b': { library: 'Qwen3.5-9B-q4f16_1_cs1k-webgpu.wasm', context: 32768 },
     'deepseek-r1-qwen-7b': {
       library: 'Qwen2-7B-Instruct-q4f16_1_cs1k-webgpu.wasm',
       context: 131072,
@@ -51,14 +51,14 @@ test('Qwen3.5 retains required runtime overrides and uses supported non-thinking
   assert.deepEqual(record!.overrides!.conv_config!.stop_token_ids, [248046, 248044]);
   const request = localModelRequest(profile, [{ role: 'user', content: 'Synthetic question' }]);
   assert.equal(profile.nativeContextWindowTokens, 262144);
-  assert.equal(request.max_tokens, 131072);
+  assert.equal(request.max_tokens, 32768);
   assert.equal(request.temperature, 0);
   assert.equal(request.top_p, 1);
   assert.equal(request.seed, 42);
   assert.equal(request.presence_penalty, 1.5);
   assert.equal(request.repetition_penalty, 1);
   assert.deepEqual(request.extra_body, { enable_thinking: false });
-  assert.equal(localContextBudget(profile).inputByteLimit, 126720);
+  assert.equal(localContextBudget(profile).inputByteLimit, 28416);
 });
 
 test('generation options are independent: Llama never inherits Qwen thinking or penalty settings', () => {

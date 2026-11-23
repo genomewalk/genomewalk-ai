@@ -274,7 +274,7 @@ test('Model-specific configuration does not leak when switching back from Qwen3.
   f.session.release(lease);
   for (const request of f.requests) {
     assert.equal(request.model, 'Qwen3.5-9B-q4f16_1-MLC');
-    assert.equal(request.max_tokens, 131072);
+    assert.equal(request.max_tokens, 32768);
     assert.deepEqual(request.extra_body, { enable_thinking: false });
   }
   assert.equal(await f.session.selectModel('llama-3.1-8b'), true);

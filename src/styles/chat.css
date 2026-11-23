@@ -662,7 +662,7 @@ details pre {
 }
 .message-bubble.evidence-answer {
   padding: 22px 24px;
-  background: #eef1e8;
+  background: #fffefa;
   border-color: #cbd6c6;
 }
 .evidence-answer .assistant-markdown > p:first-child {
@@ -672,6 +672,10 @@ details pre {
 .evidence-answer .assistant-markdown h3 {
   margin-top: 24px;
   font-size: 18px;
+}
+.evidence-answer .assistant-markdown h3 ~ h3 {
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
 }
 @media (max-width: 600px) {
   .message-bubble.evidence-answer {

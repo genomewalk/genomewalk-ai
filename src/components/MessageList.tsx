@@ -8,8 +8,8 @@ const outputBudget = (message: ChatMessage) =>
   Math.max(
     0,
     Math.min(
-      message.journey?.steps.find((step) => step.id === 'answer')?.data?.opening?.request
-        ?.max_tokens ?? message.model!.contextWindowTokens,
+      message.journey?.steps.find((step) => step.id === 'context')?.data?.request?.max_tokens ??
+        message.model!.contextWindowTokens,
       message.model!.contextWindowTokens - message.usage!.prompt_tokens,
     ),
   );
@@ -115,7 +115,7 @@ export function MessageList({ messages, busy }: { messages: ChatMessage[]; busy:
               </div>
             )}
             {message.role === 'assistant' && message.content && (
-              <ResponseSource content={message.content} evidenceAnswer={message.evidenceAnswer} />
+              <ResponseSource content={message.content} />
             )}
             {message.usage && message.status !== 'streaming' && (
               <p className="message-note local-token-usage">
@@ -152,7 +152,7 @@ export function MessageList({ messages, busy }: { messages: ChatMessage[]; busy:
                 Output/context limit reached.{' '}
                 {message.general
                   ? 'This partial explanation is excluded from local history. Ask a more focused question.'
-                  : 'No incomplete record selection is used for an answer. Please try again with a more focused question.'}
+                  : 'The incomplete answer is excluded from local history. Please try again with a more focused question.'}
               </p>
             )}
           </article>

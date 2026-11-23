@@ -14,6 +14,7 @@ import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
 import { searchDocument, cosineSimilarity } from '../src/lib/semantic-search.ts';
 import { loadCatalogKeys, hydrateGenomewalkMatches } from '../src/lib/local-catalog.ts';
+import { buildGeneralContext } from '../src/lib/general-context.ts';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
 import { LOCAL_MODELS, getModelProfile } from '../src/config/models/index.ts';
 import { scanVcf } from '../src/lib/vcf-matcher.ts';
@@ -187,7 +188,7 @@ test('readable input preserves actual evidence and every source link without int
       profile,
       plan,
     );
-    assert.equal(context.included, rows.length);
+    assert.equal(context.included, 3);
     assert.equal(context.evidence.matches[0]!.gene, 'SYNTHETIC5');
     assert.ok(context.inputBytes <= context.inputByteLimit);
     assert.ok(!JSON.stringify(context.messages).includes('SENTINEL'));
@@ -245,24 +246,19 @@ test('separate source lists never become invented condition-specific classificat
   assert.equal(Object.hasOwn(reference, 'conflictingClassifications'), false);
 });
 
-test('ten-candidate default and explicit smaller budget share prompt, order and whole-record admission', () => {
+test('three-candidate limit preserves rank and permits a smaller shortlist', () => {
   const profile = getModelProfile('qwen3.5-9b');
-  const ten = buildEmbeddingsContext('Compare', rows, result, profile, plan);
-  const four = buildEmbeddingsContext('Compare', rows, result, profile, plan, [], {
-    maxNewRecords: 4,
-  });
-  assert.equal(ten.maxNewRecords, 10);
-  assert.equal(ten.included, rows.length);
-  assert.equal(four.maxNewRecords, 4);
-  assert.equal(four.included, 4);
-  assert.deepEqual(ten.evidence.matches.slice(0, 4), four.evidence.matches);
-  assert.equal(ten.messages[0]!.content, four.messages[0]!.content);
-  assert.equal(ten.omitted, 0);
-  assert.equal(four.omitted, 1);
-  for (const maxNewRecords of [0, 11, 2.5, '2']) {
+  const three = buildEmbeddingsContext('Compare', rows, result, profile, plan);
+  const two = buildEmbeddingsContext('Compare', rows, result, profile, plan, { maxNewRecords: 2 });
+  assert.equal(three.maxNewRecords, 3);
+  assert.equal(three.included, 3);
+  assert.equal(two.included, 2);
+  assert.deepEqual(three.evidence.matches.slice(0, 2), two.evidence.matches);
+  assert.equal(three.omitted, rows.length - 3);
+  for (const maxNewRecords of [0, 4, 10, 2.5, '2']) {
     assert.throws(
-      // @ts-expect-error Exercise invalid limits from an untyped caller.
-      () => buildEmbeddingsContext('Compare', rows, result, profile, plan, [], { maxNewRecords }),
+      // @ts-expect-error Invalid limits from untyped input.
+      () => buildEmbeddingsContext('Compare', rows, result, profile, plan, { maxNewRecords }),
       /New-record limit/,
     );
   }
@@ -314,7 +310,7 @@ test('field descriptions keep calls, classification conflicts and unknown review
   assert.equal(compactMatch({ ...row, stars: 0 }).review, '0 stars: criteria provided.');
 });
 
-test('context budgeting drops whole records and retains required private referents', () => {
+test('context budgeting drops whole records; conversation-only context drops whole turns', () => {
   const profile = getModelProfile('qwen3-4b');
   const huge = { ...rows[0]!, conditions: 'Condition '.repeat(5000) };
   const context = buildEmbeddingsContext(
@@ -323,7 +319,6 @@ test('context budgeting drops whole records and retains required private referen
     result,
     profile,
     plan,
-    [],
     { maxNewRecords: 3 },
   );
   assert.equal(context.consideredRows[0]!.status, 'context_budget');
@@ -335,15 +330,17 @@ test('context budgeting drops whole records and retains required private referen
   const previous = [
     { question: 'Verified earlier question', answer: 'UNVERIFIED_ANSWER', records: [] },
   ];
-  const followup = buildEmbeddingsContext('Which one?', [], result, profile, plan, previous);
+  const followup = buildGeneralContext('Which one?', previous, profile, { followup: true });
   assert.equal(followup.historyTurns, 1);
   assert.equal(followup.inputByteLimit, profile.contextWindowTokens - 4096 - 768);
   assert.equal(followup.messages[1]!.content, 'Verified earlier question');
   assert.ok(JSON.stringify(followup.messages).includes('UNVERIFIED_ANSWER'));
-  assert.ok(!JSON.stringify(followup.recordReference).includes('UNVERIFIED_ANSWER'));
-  const hugeHistory = buildEmbeddingsContext('Which?', [], result, profile, plan, [
-    { question: 'x'.repeat(50000), answer: 'Old answer', records: [] },
-  ]);
+  const hugeHistory = buildGeneralContext(
+    'Which?',
+    [{ question: 'x'.repeat(50000), answer: 'Old answer' }],
+    profile,
+    { followup: true },
+  );
   assert.equal(hugeHistory.historyTurns, 0);
   assert.equal(hugeHistory.omittedHistoryTurns, 1);
 });
@@ -355,82 +352,33 @@ test('local query parsing is schema validation, never heuristic repairs or keywo
   assert.throws(() => parseLocalQuery(JSON.stringify({ ...plan, query: '' })), /invalid/);
 });
 
-test('history keeps exact prior records and publication links across new topics, without promoting prose to evidence', () => {
+test('fresh search preserves supplied source facts without prior conversation', () => {
   for (const profile of LOCAL_MODELS) {
-    const previous = [
-      {
-        question: 'Hearing?',
-        answer: 'Earlier answer remains verbatim.',
-        records: rows.slice(0, 2).map(compactMatch),
-      },
-      { question: 'Explain that term', answer: 'A general definition.', records: [] },
-    ];
-    const c = buildEmbeddingsContext('A new topic', rows.slice(2), result, profile, plan, previous);
-    assert.equal(c.historyTurns, 2);
-    assert.equal(c.evidence.earlierMatches.length, 2);
-    assert.deepEqual(
-      c.recordReference.records.map((r) => r.gene),
-      ['SYNTHETIC3', 'SYNTHETIC4', 'SYNTHETIC5', 'SYNTHETIC1', 'SYNTHETIC2'],
-    );
-    assert.deepEqual(
-      c.messages.slice(1, -1).map((m) => m.content),
-      previous.flatMap((t) => [t.question, t.answer]),
-    );
-    assert.ok(!JSON.stringify(c.recordReference).includes('A general definition.'));
-    assert.deepEqual(
-      c.evidence.earlierMatches[0]!.sources.PubMed,
-      compactMatch(rows[0]!).sources.PubMed,
-    );
-    assert.deepEqual(
-      c.recordReference.records[3]!.fields.find((f) => f.label === 'Publications')!.sources.map(
-        (s) => s.url,
-      ),
-      compactMatch(rows[0]!).sources.PubMed,
-    );
-    assert.ok(c.inputBytes <= c.inputByteLimit);
-    const repeated = buildEmbeddingsContext(
-      'Same record',
-      rows.slice(0, 1),
-      result,
-      profile,
-      plan,
-      previous,
-    );
-    assert.equal(
-      repeated.recordReference.records.length,
-      2,
-      'Exact repeated records are deduplicated',
-    );
-  }
-});
-
-test('overview preserves conversation but selects only from the fresh full-pool ordering', () => {
-  const previous = [
-    {
-      question: 'An earlier topic',
-      answer: 'The earlier cards',
-      records: rows.slice(0, 2).map(compactMatch),
-    },
-  ];
-  for (const profile of LOCAL_MODELS) {
-    const c = buildEmbeddingsContext(
-      'Review everything',
-      rows.slice(2),
-      result,
-      profile,
-      { mode: 'overview', query: '' },
-      previous,
-    );
-    assert.deepEqual(
-      c.messages.slice(1, -1).map((m) => m.content),
-      ['An earlier topic', 'The earlier cards'],
-    );
+    const c = buildEmbeddingsContext('New topic', rows.slice(2), result, profile, plan);
+    assert.equal(c.historyTurns, 0);
+    assert.equal(c.messages.length, 2);
     assert.deepEqual(c.evidence.earlierMatches, []);
     assert.deepEqual(
       c.recordReference.records.map((r) => r.gene),
       ['SYNTHETIC3', 'SYNTHETIC4', 'SYNTHETIC5'],
     );
     assert.ok(c.recordReference.records.every((r) => r.origin === 'current'));
+    assert.ok(c.inputBytes <= c.inputByteLimit);
+  }
+});
+
+test('overview uses only the fresh full-pool ordering and no conversation', () => {
+  for (const profile of LOCAL_MODELS) {
+    const c = buildEmbeddingsContext('Review', rows.slice(2), result, profile, {
+      mode: 'overview',
+      query: '',
+    });
+    assert.equal(c.messages.length, 2);
+    assert.equal(c.historyTurns, 0);
+    assert.deepEqual(
+      c.recordReference.records.map((r) => r.gene),
+      ['SYNTHETIC3', 'SYNTHETIC4', 'SYNTHETIC5'],
+    );
   }
 });
 
@@ -577,6 +525,7 @@ test('local mode uses real matching, isolated history and compact requests; no c
       if (url === '/ref/release.json')
         return Response.json({ schema: 1, catalogs: { GRCh38: preparedConfig.catalog } });
       if (String(url).startsWith('/ref/GRCh38/')) return publicFetch(url);
+      if (String(url).startsWith('/ref/publications/')) return new Response(null, { status: 404 }); // Missing metadata must not block answers.
       throw new Error(`Forbidden endpoint: ${url}`);
     },
   });
@@ -588,7 +537,7 @@ test('local mode uses real matching, isolated history and compact requests; no c
   const first = session.state.messages.at(-1)!;
   assert.equal(first!.status, 'complete');
   assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC1');
-  assert.equal(first!.context!.included, rows.length);
+  assert.equal(first!.context!.included, 3);
   assert.equal(first!.finishReason, 'stop');
   assert.equal(first!.question, 'Hearing?');
   assert.deepEqual(
@@ -606,22 +555,12 @@ test('local mode uses real matching, isolated history and compact requests; no c
     {},
     'Constrained JSON must not receive a runtime thinking prefix',
   );
-  assert.deepEqual(
-    requests[1]!.extra_body,
-    {},
-    'Fact selection must not receive a runtime thinking prefix',
-  );
-  assert.deepEqual(
-    first!.journey!.steps.find((s) => s.id === 'answer')!.data!.opening!.request,
-    requests[2]!,
-  );
-  assert.deepEqual(requests[2]!.extra_body, { enable_thinking: false });
+  assert.deepEqual(requests[1]!.extra_body, { enable_thinking: false });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]!.response_format, undefined);
   assert.ok(first!.evidenceAnswer);
-  assert.match(first!.content, /SYNTHETIC1/);
-  assert.equal(
-    first!.journey!.steps.find((s) => s.id === 'answer')!.data!.raw,
-    JSON.stringify({ selected: ['v1'] }),
-  );
+  assert.equal(first!.content, 'These records contain the requested annotations.');
+  assert.equal(first!.journey!.steps.find((s) => s.id === 'answer')!.data!.raw, first!.content);
   assert.equal(first!.journey!.steps.find((s) => s.id === 'semantic')!.data!.rows!.length, 5);
   assert.equal(
     first!.journey!.steps.some((s) => String(s.id) === 'ranking'),
@@ -649,14 +588,19 @@ test('local mode uses real matching, isolated history and compact requests; no c
   await session.send('Which of those?');
   assert.equal(session.state.error, null);
   assert.equal(scans, 1);
-  assert.equal(session.state.messages.at(-1)!.context!.historyTurns, 1);
+  assert.equal(session.state.messages.at(-1)!.context!.historyTurns, 0);
   assert.deepEqual(
     operations,
     ['index', 'score', 'score'],
     'Search uses only embedding/index operations; catalog ordering runs in the session',
   );
   assert.ok(
-    urls.every((url) => url === '/ref/release.json' || String(url).startsWith('/ref/GRCh38/')),
+    urls.every(
+      (url) =>
+        url === '/ref/release.json' ||
+        String(url).startsWith('/ref/GRCh38/') ||
+        url === '/ref/publications/index.json',
+    ),
   );
   assert.equal(local.state.reserved, false);
   assert.equal('history' in local, false);
@@ -682,7 +626,7 @@ test('local mode uses real matching, isolated history and compact requests; no c
   );
   assert.deepEqual(
     session.state.messages.at(-1)!.context!.evidence!.matches.map((r) => r.gene),
-    rows.map((r) => r.gene),
+    rows.slice(0, 3).map((r) => r.gene),
   );
   session.forget();
   assert.equal(session.state.indexReady, false);
@@ -995,9 +939,7 @@ test('changing genome cancels in-flight preparation, rejects late results and cl
   });
   const initial = session.initialize();
   const signal = await firstStarted.promise;
-  session.history = [
-    { question: 'Old genome question', answer: 'Old answer', records: rows.map(compactMatch) },
-  ];
+  session.history = [{ question: 'Old genome question', answer: 'Old answer' }];
   session.update({ messages: [{ id: 1, role: 'assistant', content: 'Old genome answer' }] });
   const switched = session.selectGenome(inputFile());
   assert.equal(signal.aborted, true);
@@ -1078,7 +1020,7 @@ test('a failed public example can be replaced with a valid upload; invalid files
   await session.selectGenome(inputFile());
   assert.equal(session.state.error, null);
   assert.equal(session.state.indexReady, true);
-  session.history = [{ question: 'Old', answer: 'Old', records: rows.map(compactMatch) }];
+  session.history = [{ question: 'Old', answer: 'Old' }];
   session.update({ messages: [{ id: 1, role: 'assistant', content: 'Earlier evidence' }] });
   await session.selectGenome(new File(['not a VCF'], 'invalid.vcf'));
   assert.equal(session.state.indexReady, false);

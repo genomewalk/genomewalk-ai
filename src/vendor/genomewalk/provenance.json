@@ -12,6 +12,8 @@
     "io/checksum.ts": "2ef1a5e1f77d0807c61b104bb3f1d3a454173c7ee3ddeb5b050c0a53280d6c7b",
     "io/fetch-public.ts": "f50f324bef03fa5427c0751e3152b001f2dfba61610361c73f706a129789cd32",
     "io/types.ts": "faf8d333138945e495752b61cb40358da662801b7fff21c5fd27b3fbeb637b6f",
-    "public-file.ts": "98104baa50f6abd36c5fd3118da31ab0f812f1816cf3ce9626b6cbde11e7dfae"
+    "public-file.ts": "98104baa50f6abd36c5fd3118da31ab0f812f1816cf3ce9626b6cbde11e7dfae",
+    "catalogues/publication-format.ts": "5c169b743b67b4f065ebfb536ac9a66b8e706da4cd22fc24aa744f4f36e3e150",
+    "catalogues/publications.ts": "afe723a32ce70cb6ad62ba9f73dddbcebe81c42f7d2b5dbb962da4d9a07c6b30"
   }
 }

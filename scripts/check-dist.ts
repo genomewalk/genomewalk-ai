@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inspectReferences, REFERENCE_FILES } from './lib/references.ts';
+import { inspectReferences, REFERENCE_FILES, publicationFiles } from './lib/references.ts';
 import { verifiedFile } from './lib/files.ts';
 import { EXAMPLE_GENOME } from '../src/config/example-genome.ts';
 
@@ -12,6 +12,7 @@ const allowed = new Set([
   'ref/release.json',
   'samples/README.md',
   ...REFERENCE_FILES.map((file) => `ref/${file}`),
+  ...(await publicationFiles(join(root, 'ref'))).map((file) => `ref/${file}`),
   `samples/${EXAMPLE_GENOME.name}`,
 ]);
 async function inspect(directory = '') {

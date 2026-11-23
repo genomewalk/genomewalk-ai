@@ -1,15 +1,11 @@
 import type { MatchedRow, MatchResult, ModelProfile, SearchPlan, GenomeSource } from './types.ts';
-import type { ConversationTurn } from './conversation-context.ts';
 import { compactMatch } from './match-reference.ts';
 import { EMBEDDINGS_ANSWER_PROMPT } from '../prompts/embeddings.ts';
-import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
+import { MAX_CANDIDATES, EVIDENCE_ANSWER } from '../config/evidence-answer.ts';
 import { conversationMessages, fitConversation } from './conversation-context.ts';
-import {
-  buildRecordReference,
-  buildSelectionReference,
-  selectionGeneration,
-} from './evidence-answer.ts';
+import { buildRecordReference, buildAnswerReference } from './evidence-answer.ts';
 import { genomeProvenance } from './genome-provenance.ts';
+import type { PublicationLabels } from '../vendor/genomewalk/catalogues/publication-format.ts';
 
 export function buildEmbeddingsContext(
   question: string,
@@ -17,30 +13,22 @@ export function buildEmbeddingsContext(
   result: Pick<MatchResult, 'build' | 'matches' | 'issues'>,
   profile: ModelProfile,
   plan: SearchPlan,
-  previous: ConversationTurn[] = [],
   {
     maxNewRecords = MAX_CANDIDATES,
-    maxSelectedRecords,
     genomeSource,
-  }: { maxNewRecords?: number; maxSelectedRecords?: number; genomeSource?: GenomeSource } = {},
+    publicationLabels,
+  }: {
+    maxNewRecords?: number;
+    genomeSource?: GenomeSource;
+    publicationLabels?: PublicationLabels;
+  } = {},
 ) {
   if (!Number.isInteger(maxNewRecords) || maxNewRecords < 1 || maxNewRecords > MAX_CANDIDATES)
     throw new Error(`New-record limit must be an integer from 1 to ${MAX_CANDIDATES}.`);
   const matches: ReturnType<typeof compactMatch>[] = [];
   const consideredRows: { citation: string; gene?: string; status: string }[] = [];
-  const build = (history: ConversationTurn[]) => {
-    const seen = new Set(matches.map((match) => JSON.stringify(match))),
-      earlierMatches: ReturnType<typeof compactMatch>[] = [];
-    // Topic follow-ups can select earlier displayed records. An overview uses
-    // only the fresh full-pool ordering; history still supplies conversation.
-    for (const turn of plan.mode === 'search' ? history : [])
-      for (const match of turn.records ?? []) {
-        const key = JSON.stringify(match);
-        if (!seen.has(key)) {
-          seen.add(key);
-          earlierMatches.push(match);
-        }
-      }
+  const build = () => {
+    const earlierMatches: ReturnType<typeof compactMatch>[] = [];
     const evidence = {
       build: result.build ?? 'GRCh38',
       review: plan.mode,
@@ -60,33 +48,31 @@ export function buildEmbeddingsContext(
       matches: [...matches],
       earlierMatches,
     };
-    const recordReference = buildRecordReference(evidence, { maxSelectedRecords });
+    const recordReference = buildRecordReference({ ...evidence, publicationLabels });
     return {
       evidence,
       recordReference,
-      generation: selectionGeneration(recordReference),
+      generation: {
+        max_tokens: EVIDENCE_ANSWER.maxTokens,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+      },
       messages: conversationMessages(
         EMBEDDINGS_ANSWER_PROMPT,
         JSON.stringify({
           scope: plan,
-          reference: buildSelectionReference(recordReference),
+          reference: buildAnswerReference(recordReference),
           latestQuestion: question,
         }),
-        history,
+        [],
       ),
     };
   };
-  // Reserve the latest complete turn before adding new candidates. This keeps
-  // recent source records available without detecting follow-ups from keywords.
-  // A turn that cannot fit on its own is still omitted whole by fitConversation.
-  const recent = plan.mode === 'search' ? previous.slice(-1) : [];
-  const reservedTurns = fitConversation(recent, profile, build).historyTurns;
   for (const row of rows.slice(0, maxNewRecords)) {
     matches.push(compactMatch(row));
     let status = 'included';
     try {
-      if (fitConversation(recent, profile, build).historyTurns < reservedTurns)
-        throw new Error('New records would displace the reserved conversation turn.');
+      fitConversation([], profile, build);
     } catch {
       matches.pop();
       status = 'context_budget';
@@ -94,7 +80,7 @@ export function buildEmbeddingsContext(
     consideredRows.push({ citation: row.citation, gene: row.gene, status });
   }
   return {
-    ...fitConversation(previous, profile, build),
+    ...fitConversation([], profile, build),
     included: matches.length,
     omitted: rows.length - matches.length,
     maxNewRecords,

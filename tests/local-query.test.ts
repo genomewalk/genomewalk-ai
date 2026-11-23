@@ -1,7 +1,7 @@
 import type { ModelRequest, ModelChunk, MatchedRow } from '../src/lib/types.ts';
 import { fakeEngine, fakeSearch } from './helpers/inference.ts';
 import test from 'node:test';
-import { EVIDENCE_OPENING_PROMPT } from '../src/prompts/embeddings.ts';
+import { EMBEDDINGS_ANSWER_PROMPT } from '../src/prompts/embeddings.ts';
 import assert from 'node:assert/strict';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
@@ -12,10 +12,7 @@ import { conversationMessages, fitConversation } from '../src/lib/conversation-c
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
 
 const plan = (mode: string, query = '') => ({ mode, query });
-const selected = (ids: string[]) => ({
-  raw: JSON.stringify({ selected: ids }),
-  finish: 'stop' as const,
-});
+const answer = (raw: string) => ({ raw, finish: 'stop' as const });
 
 const rows = Array.from({ length: 30 }, (_, i) => ({
   citation: `C${i + 1}`,
@@ -36,13 +33,8 @@ async function harness(
   plans: { mode: string; query: string }[],
   answers: { raw: string; finish: ModelChunk['choices'][number]['finish_reason'] }[] = [],
   records: MatchedRow[] = rows,
-  openingReply: { raw: string; finish: ModelChunk['choices'][number]['finish_reason'] } = {
-    raw: 'These records contain the requested annotations.',
-    finish: 'stop' as const,
-  },
 ) {
   const requests: ModelRequest[] = [];
-  const openingRequests: ModelRequest[] = [];
   const operations: string[] = [];
   const local = new LocalModelSession({
     modelId: 'qwen3-4b',
@@ -52,15 +44,6 @@ async function harness(
         async reset() {},
         dispose() {},
         async *complete(request) {
-          if (request.messages[0]!.content === EVIDENCE_OPENING_PROMPT) {
-            openingRequests.push(structuredClone(request));
-            yield {
-              choices: [
-                { delta: { content: openingReply.raw }, finish_reason: openingReply.finish },
-              ],
-            };
-            return;
-          }
           requests.push(structuredClone(request));
           const planning = Boolean(
             request.response_format &&
@@ -71,7 +54,7 @@ async function harness(
           const reply = planning
             ? { raw: JSON.stringify(plans.shift()), finish: 'stop' as const }
             : (answers.shift() ?? {
-                raw: JSON.stringify({ selected: ['v1'] }),
+                raw: 'These records contain the requested annotations.',
                 finish: 'stop' as const,
               });
           yield { choices: [{ delta: { content: reply.raw }, finish_reason: reply.finish }] };
@@ -104,21 +87,27 @@ async function harness(
       documents: records.map((r) => r.gene ?? ''),
     });
   };
-  return { session, requests, openingRequests, operations, preparations: () => preparations };
+  return { session, requests, operations, preparations: () => preparations };
 }
 
-test('exactly three categories; removed routes and extra routing fields are rejected', () => {
+test('exactly four categories; removed routes and extra routing fields are rejected', () => {
   assert.deepEqual(
     QUERY_SCHEMA.anyOf.map((b) => b.properties.mode.enum[0]!),
-    ['search', 'overview', 'other'],
+    ['search', 'overview', 'other', 'followup'],
   );
-  for (const value of [plan('search', 'hearing'), plan('overview'), plan('other')]) {
+  for (const value of [
+    plan('search', 'hearing'),
+    plan('overview'),
+    plan('other'),
+    plan('followup'),
+  ]) {
     assert.deepEqual(parseLocalQuery(JSON.stringify(value)), value);
   }
   for (const value of [
     plan('search'),
     plan('overview', 'topic'),
     plan('other', 'topic'),
+    plan('followup', 'topic'),
     ...['reuse', 'educate', 'clarify', 'unresolved', 'invalid'].map((mode) => plan(mode)),
     { ...plan('search', 'hearing'), usePreviousEvidence: true },
     { ...plan('other'), clarification: 'Which?' },
@@ -129,12 +118,13 @@ test('exactly three categories; removed routes and extra routing fields are reje
   assert.throws(() => parseLocalQuery('```json\n{}\n```'));
 });
 
-test('Other responds without genome preparation and stores the complete conversation', async () => {
+test('General starts fresh; Follow-up receives conversation only without preparing or searching records', async () => {
   const h = await harness(
-    [plan('other'), plan('other')],
+    [plan('other'), plan('followup'), plan('other')],
     [
-      { raw: 'A chromosome contains DNA.', finish: 'stop' as const },
-      { raw: 'DNA is packaged into chromosomes.', finish: 'stop' as const },
+      answer('A chromosome contains DNA.'),
+      answer('DNA is packaged into chromosomes.'),
+      answer('A new explanation.'),
     ],
   );
   h.session.fetch = () => {
@@ -142,35 +132,34 @@ test('Other responds without genome preparation and stores the complete conversa
   };
   await h.session.send('What is a chromosome?');
   await h.session.send('Explain that more simply.');
-  assert.equal(h.session.state.error, null);
   assert.equal(h.preparations(), 0);
   assert.deepEqual(h.operations, []);
-  assert.equal(h.session.state.messages.at(-1)!.general, true);
-  assert.deepEqual(h.session.history[0]!, {
-    question: 'What is a chromosome?',
-    answer: 'A chromosome contains DNA.',
-    records: [],
-  });
-  for (const request of [h.requests[2]!, h.requests[3]!]) {
-    assert.deepEqual(request.messages.slice(1), [
-      { role: 'user', content: 'What is a chromosome?' },
-      { role: 'assistant', content: 'A chromosome contains DNA.' },
-      { role: 'user', content: 'Explain that more simply.' },
-    ]);
-  }
-  assert.equal(h.requests[1]!.response_format, undefined);
+  const follow = h.requests[3]!;
+  assert.deepEqual(follow.messages.slice(1, -1), [
+    { role: 'user', content: 'What is a chromosome?' },
+    { role: 'assistant', content: 'A chromosome contains DNA.' },
+  ]);
+  const payload = JSON.parse(follow.messages.at(-1)!.content);
+  assert.equal(payload.latestQuestion, 'Explain that more simply.');
+  assert.equal(payload.reference, undefined);
+  assert.equal(h.session.state.messages.at(-1)!.context!.historyTurns, 1);
+  await h.session.send('What is an allele?');
+  assert.equal(h.requests[5]!.messages.length, 2);
+  assert.equal(h.requests[5]!.messages.at(-1)!.content, 'What is an allele?');
+  assert.equal(h.session.state.error, null);
+  assert.ok(h.session.history.every((turn) => !Object.hasOwn(turn, 'records')));
   for (const profile of LOCAL_MODELS) {
-    const c = buildGeneralContext('What is a chromosome?', [], profile);
-    assert.deepEqual(c.messages, h.requests[1]!.messages);
-    assert.equal(c.responseTokenLimit, profile.contextWindowTokens);
-    assert.ok(c.inputBytes <= c.inputByteLimit);
+    assert.equal(buildGeneralContext('New', h.session.history, profile).historyTurns, 0);
   }
 });
 
-test('clarification is an ordinary Other answer and its reply uses Q&A history with no pending state', async () => {
+test('clarification is an ordinary General answer; routing sees history but a fresh search answer does not', async () => {
   const h = await harness(
     [plan('other'), plan('search', 'hearing variants')],
-    [{ raw: 'Which topic or finding do you mean?', finish: 'stop' as const }, selected(['v1'])],
+    [
+      { raw: 'Which topic or finding do you mean?', finish: 'stop' as const },
+      answer('The first candidate is relevant.'),
+    ],
   );
   await h.session.send('Which of those?');
   await h.session.send('The hearing-related variants.');
@@ -184,45 +173,67 @@ test('clarification is an ordinary Other answer and its reply uses Q&A history w
     { role: 'assistant', content: 'Which topic or finding do you mean?' },
     { role: 'user', content: 'The hearing-related variants.' },
   ]);
+  assert.equal(h.requests[3]!.messages.length, 2);
   h.session.clear();
   assert.deepEqual(h.session.history, []);
 });
 
-test('follow-ups and topic changes use conversation; only selected verified records enter the reference', async () => {
+test('an oversized previous answer is omitted with its question, never partially copied', () => {
+  const profile = { ...LOCAL_MODELS[0]!, contextWindowTokens: 8000 };
+  const previous = [{ question: 'Earlier topic', answer: 'x'.repeat(9000) }];
+  const c = buildGeneralContext('Explain it', previous, profile, { followup: true });
+  assert.equal(c.historyTurns, 0);
+  assert.equal(c.omittedHistoryTurns, 1);
+  assert.equal(c.messages.length, 2);
+  assert.ok(!JSON.stringify(c.messages).includes('Earlier topic'));
+  assert.ok(!JSON.stringify(c.messages).includes('xxxx'));
+});
+
+test('routing cannot choose Follow-up when no complete earlier exchange fits', () => {
+  const profile = { ...LOCAL_MODELS[0]!, contextWindowTokens: 8000 };
+  const modes = (previous: { question: string; answer: string }[]) => {
+    const c = buildLocalQueryContext('Tell me more', previous, profile);
+    return JSON.parse(c.generation.response_format!.schema!).anyOf.map(
+      (branch: { properties: { mode: { enum: string[] } } }) => branch.properties.mode.enum[0],
+    );
+  };
+  assert.ok(!modes([]).includes('followup'));
+  assert.ok(!modes([{ question: 'Old', answer: 'x'.repeat(9000) }]).includes('followup'));
+  assert.ok(modes([{ question: 'Old', answer: 'Brief answer' }]).includes('followup'));
+});
+
+test('routing sees history; fresh searches and overviews do not; Follow-up has no source payload', async () => {
   const h = await harness(
-    [plan('search', 'hearing'), plan('other'), plan('search', 'cancer')],
+    [plan('overview'), plan('followup'), plan('search', 'new topic'), plan('overview')],
     [
-      selected(['v1']),
-      { raw: 'UNVERIFIED_INTERPRETATION_SENTINEL', finish: 'stop' as const },
-      selected(['v2']),
+      answer('A synthetic variant was discussed.'),
+      answer('UNVERIFIED_INTERPRETATION_SENTINEL'),
+      answer('New facts.'),
+      answer('New overview.'),
     ],
   );
-  await h.session.send('Review hearing variants');
-  await h.session.send('What does that term mean?');
-  await h.session.send('What about cancer?');
-  assert.equal(h.session.state.error, null);
-  assert.deepEqual(h.operations, ['score', 'score']);
-  assert.equal(
-    h.session.history[0]!.records!.length,
-    1,
-    'Only the displayed record is retained as evidence',
-  );
-  assert.deepEqual(h.session.history[1]!.records, []);
-  const request = h.requests[5]!;
+  await h.session.send('Overview');
+  await h.session.send('Tell me more about that variant');
+  assert.equal(h.preparations(), 1, 'Follow-up does not prepare an index');
+  assert.deepEqual(h.operations, [], 'Overview and Follow-up do not run semantic search');
+  assert.deepEqual(h.requests[3]!.messages.slice(1, -1), [
+    { role: 'user', content: 'Overview' },
+    { role: 'assistant', content: 'A synthetic variant was discussed.' },
+  ]);
+  assert.equal(JSON.parse(h.requests[3]!.messages.at(-1)!.content).reference, undefined);
+  await h.session.send('A new topic');
+  assert.ok(JSON.stringify(h.requests[4]!.messages).includes('UNVERIFIED_INTERPRETATION_SENTINEL'));
+  assert.equal(h.requests[5]!.messages.length, 2);
   assert.ok(
-    request.messages.some(
-      (m) => m.role === 'assistant' && m.content === 'UNVERIFIED_INTERPRETATION_SENTINEL',
-    ),
+    !JSON.stringify(h.requests[5]!.messages).includes('UNVERIFIED_INTERPRETATION_SENTINEL'),
   );
-  const reference = JSON.parse(request.messages.at(-1)!.content).reference;
-  assert.ok(!JSON.stringify(reference).includes('UNVERIFIED_INTERPRETATION_SENTINEL'));
-  assert.deepEqual(
-    reference.records.map((r: { gene: string }) => r.gene),
-    rows.slice(0, 10).map((row) => row.gene),
-    'Repeated source records are deduplicated',
-  );
-  assert.equal(h.session.state.messages.at(-1)!.context!.historyTurns, 2);
-  assert.equal(h.session.history[2]!.records![0]!.gene, 'FIXTURE2');
+  assert.equal(JSON.parse(h.requests[5]!.messages.at(-1)!.content).reference.records.length, 3);
+  await h.session.send('Overview again');
+  assert.equal(h.requests[7]!.messages.length, 2);
+  assert.equal(h.session.state.error, null);
+  h.session.clear();
+  assert.deepEqual(h.session.history, []);
+  assert.deepEqual(h.session.state.messages, []);
 });
 
 test('newest complete turns fit the budget; older turns are dropped whole with no summary or question rules', () => {
@@ -276,7 +287,7 @@ test('every question follows the model-selected category without inspecting ques
   }
 });
 
-test('all model profiles use the same three-category prompt, grammar and native context cap', () => {
+test('all model profiles use the same four-category prompt, grammar and native context cap', () => {
   const previous = [{ question: 'Question', answer: 'Answer', records: [] }];
   const first = buildLocalQueryContext('Follow up', previous, LOCAL_MODELS[0]!);
   for (const profile of LOCAL_MODELS) {
@@ -295,15 +306,14 @@ test('invalid plans fail visibly before matching or retrieval', async () => {
   assert.equal(h.session.history.length, 0);
 });
 
-test('unfinished general answers and invalid record selections never enter follow-up history', async () => {
+test('unfinished answers never enter conversation history', async () => {
   const h = await harness([plan('other')], [{ raw: 'Incomplete text', finish: 'length' as const }]);
   await h.session.send('Explain a concept');
   assert.equal(h.session.state.messages.at(-1)!.limited, true);
   assert.equal(h.session.history.length, 0);
   for (const reply of [
-    { raw: JSON.stringify({ selected: ['v1'], diagnosis: 'INVENTED' }), finish: 'stop' as const },
-    { raw: JSON.stringify({ selected: ['v1'] }), finish: 'length' as const },
-    { raw: 'Invented interpretation', finish: 'stop' as const },
+    { raw: 'Partial answer', finish: 'length' as const },
+    { raw: '', finish: 'stop' as const },
   ]) {
     const r = await harness([plan('overview')], [reply]);
     await r.session.send('Review my findings');
@@ -314,7 +324,7 @@ test('unfinished general answers and invalid record selections never enter follo
   }
 });
 
-test('topic search uses similarity alone before admitting ten new candidates', async () => {
+test('topic search uses similarity alone before admitting three candidates', async () => {
   const records = rows.map((row) => ({ ...row }));
   records[1]! = { ...records[1]!, sig: 'P', stars: 2, classification: 'Pathogenic' };
   records[2]! = { ...records[2]!, sig: 'P', stars: 3, classification: 'Pathogenic' };
@@ -330,7 +340,7 @@ test('topic search uses similarity alone before admitting ten new candidates', a
   );
   assert.deepEqual(
     message!.context!.evidence!.matches.map((record) => record.gene),
-    records.slice(0, 10).map((row) => row.gene),
+    records.slice(0, 3).map((row) => row.gene),
   );
   assert.ok(
     ranking!.scores!.some((hit) => hit.index === 29),
@@ -338,35 +348,29 @@ test('topic search uses similarity alone before admitting ten new candidates', a
   );
 });
 
-test('opening receives only selected records; unfinished prose is never published or remembered', async () => {
-  const h = await harness([plan('search', 'fixture')], [selected(['v2'])]);
+test('one answer call receives three candidates and publishes only the generated text', async () => {
+  const response = 'Only the second candidate helps answer this question.';
+  const h = await harness([plan('search', 'fixture')], [answer(response)]);
   await h.session.send('Review a fixture');
   assert.equal(h.session.state.error, null);
-  assert.equal(h.openingRequests.length, 1);
-  const request = h.openingRequests[0]!;
+  assert.equal(h.requests.length, 2, 'One routing call and one answer call; no selector');
+  const request = h.requests[1]!;
   const payload = JSON.parse(request.messages.at(-1)!.content);
   assert.deepEqual(
     payload.reference.records.map((r: { gene: string }) => r.gene),
-    ['FIXTURE2'],
+    rows.slice(0, 3).map((r) => r.gene),
   );
-  assert.equal(payload.reference.records[0]!.id, undefined);
-  assert.equal(payload.reference.records[0]!.origin, undefined);
   assert.equal(request.response_format, undefined);
   assert.deepEqual(request.extra_body, { enable_thinking: false });
+  assert.equal(request.messages[0]!.content, EMBEDDINGS_ANSWER_PROMPT);
   assert.equal(
-    h.session.state.messages.at(-1)!.journey!.steps.find((s) => s.id === 'answer')!.data!.opening!
-      .request!.messages[0]!.content,
-    EVIDENCE_OPENING_PROMPT,
+    h.session.state.messages.at(-1)!.content,
+    response,
+    'No candidate cards are appended',
   );
-  for (const opening of [
-    { raw: 'Partial claim', finish: 'length' as const },
-    { raw: '', finish: 'stop' as const },
-  ]) {
-    const failed = await harness([plan('search', 'fixture')], [selected(['v1'])], rows, opening);
-    await failed.session.send('Review a fixture');
-    assert.equal(failed.session.state.messages.at(-1)!.status, 'error');
-    assert.equal(failed.session.state.messages.at(-1)!.content, '');
-    assert.equal(failed.session.history.length, 0);
-    assert.equal(failed.session.local.state.reserved, false);
-  }
+  assert.equal(h.session.history[0]!.answer, response);
+  assert.equal(
+    h.session.state.messages.at(-1)!.journey!.steps.find((s) => s.id === 'answer')!.data!.raw,
+    response,
+  );
 });

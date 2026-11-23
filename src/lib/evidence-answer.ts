@@ -1,32 +1,17 @@
-import type {
-  RecordField,
-  RecordReference,
-  RecordSelection,
-  SourceLink,
-  ModelProfile,
-  Generation,
-  GenomeProvenance,
-} from './types.ts';
+import type { RecordField, RecordReference, SourceLink, GenomeProvenance } from './types.ts';
 import type { compactMatch } from './match-reference.ts';
+import type { PublicationLabels } from '../vendor/genomewalk/catalogues/publication-format.ts';
 
 export interface RecordEvidence {
   matches: ReturnType<typeof compactMatch>[];
   earlierMatches?: ReturnType<typeof compactMatch>[];
   genomeSource?: GenomeProvenance | null;
+  publicationLabels?: PublicationLabels;
 }
-import { EVIDENCE_OPENING_PROMPT } from '../prompts/embeddings.ts';
-import { conversationMessages, fitConversation } from './conversation-context.ts';
-import { MAX_RECORDS, EVIDENCE_OPENING } from '../config/evidence-answer.ts';
 import { geneSource } from './local-evidence.ts';
 
-// A selected record always displays these same source fields. The model chooses
-// records, not which source fields to hide.
-export function buildRecordReference(
-  evidence: RecordEvidence,
-  { maxSelectedRecords = MAX_RECORDS } = {},
-): RecordReference {
-  if (!Number.isInteger(maxSelectedRecords) || maxSelectedRecords < 1 || maxSelectedRecords > 4)
-    throw new Error('Selected-record limit must be an integer from 1 to 4.');
+// Original source fields remain available in the model-input inspector.
+export function buildRecordReference(evidence: RecordEvidence): RecordReference {
   const records: RecordReference['records'] = [];
   for (const [origin, matches] of [
     ['current', evidence.matches],
@@ -66,7 +51,10 @@ export function buildRecordReference(
           publications.length
             ? `${publications.length} publication ${publications.length === 1 ? 'link is' : 'links are'} supplied; paper contents are not included in this reference.`
             : 'No publication links are supplied for this variant in the catalog reference.',
-          publications.map((url, i) => ({ label: `PubMed ${i + 1}`, url })),
+          publications.map((url) => {
+            const id = new URL(url).pathname.split('/').filter(Boolean).at(-1)!;
+            return { label: evidence.publicationLabels?.[id] || `PubMed ${id}`, url };
+          }),
         ),
       ];
       records.push({
@@ -80,52 +68,30 @@ export function buildRecordReference(
     }
   }
   return {
-    maxSelectedRecords,
     ...(evidence.genomeSource ? { genomeSource: evidence.genomeSource } : {}),
     records,
   };
 }
 
-export function selectionSchema(reference: RecordReference) {
-  const ids = reference.records.map((record) => record.id);
+// Keep readable descriptions compact while preserving every source field and link.
+export function buildAnswerReference(reference: RecordReference) {
   return {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      selected: {
-        type: 'array',
-        items: { type: 'string', enum: ids.length ? ids : ['unavailable'] },
-        maxItems: Math.min(reference.maxSelectedRecords ?? MAX_RECORDS, ids.length),
-        uniqueItems: true,
-      },
-    },
-    required: ['selected'],
-  };
-}
-
-// Only the selector needs this smaller representation. Original fields and links
-// remain available for explanation and display, keyed by the same record IDs.
-export function buildSelectionReference(reference: RecordReference) {
-  return {
-    maxSelectedRecords: reference.maxSelectedRecords,
     ...(reference.genomeSource ? { genomeSource: reference.genomeSource } : {}),
-    note: 'Classifications are not mapped to individual conditions. Publication links supply no paper contents.',
     records: reference.records.map((record) => {
       const variantIds = record.fields.find(
         ({ label }) => label === 'Variant ID (dbSNP)' || label === 'Variant IDs (dbSNP)',
       );
-      const sourceIds = new Set<string>();
+      const sources = new Map<string, SourceLink>();
+      if (record.gene) {
+        const gene = geneSource(record.gene);
+        sources.set(gene.url, gene);
+      }
       for (const field of record.fields)
-        for (const source of field.sources) {
-          const id = new URL(source.url).pathname.split('/').filter(Boolean).at(-1);
-          if (source.label === 'ClinVar') sourceIds.add(`ClinVar ID: ${id}.`);
-          if (source.label.startsWith('PubMed ')) sourceIds.add(`PubMed ID: ${id}.`);
-        }
+        for (const source of field.sources) sources.set(source.url, source);
       return {
-        id: record.id,
-        origin: record.origin,
         gene: record.gene,
         variant_ids: variantIds?.sources.map((source) => source.label) ?? [],
+        sources: [...sources.values()],
         description: [
           record.variant,
           ...record.fields
@@ -135,117 +101,8 @@ export function buildSelectionReference(reference: RecordReference) {
                 ? `${field.label}: ${field.items.join('; ')}.`
                 : `${field.label}: ${field.text}`,
             ),
-          ...sourceIds,
         ].join(' '),
       };
     }),
   };
-}
-
-export function selectionGeneration(reference: RecordReference): Generation {
-  // Same JSON grammar configuration for every family. Full context/output cap
-  // is retained; runtime thinking tags are not prepended outside the grammar.
-  return {
-    presence_penalty: 0,
-    repetition_penalty: 1,
-    extra_body: {},
-    response_format: { type: 'json_object', schema: JSON.stringify(selectionSchema(reference)) },
-  };
-}
-
-export function parseRecordSelection(raw: string, reference: RecordReference): RecordSelection {
-  let value;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    throw new Error(
-      'The local model returned invalid selection JSON. No answer was displayed. Please try again.',
-    );
-  }
-  const allowed = new Set(reference.records.map((record) => record.id));
-  if (
-    !value ||
-    Array.isArray(value) ||
-    Object.keys(value).sort().join() !== 'selected' ||
-    !Array.isArray(value.selected) ||
-    value.selected.length > (reference.maxSelectedRecords ?? MAX_RECORDS) ||
-    value.selected.some((id: unknown) => typeof id !== 'string' || !allowed.has(id)) ||
-    new Set(value.selected).size !== value.selected.length
-  )
-    throw new Error(
-      'The local model returned an invalid evidence answer. No answer was displayed. Please try again.',
-    );
-  return value;
-}
-
-// Escape plain text for Markdown display. No semantic filtering or output repair.
-const literal = (text: unknown) =>
-  String(text ?? '')
-    .replace(/[\\`*_{}[\]<>()!|#~>]/g, '\\$&')
-    .replace(/[\r\n]+/g, ' ');
-const links = (sources: SourceLink[]) =>
-  sources.map(({ label, url }) => `[${literal(label)}](${url})`).join(' · ');
-export function renderRecordSelection(
-  selection: RecordSelection,
-  reference: RecordReference,
-  opening = '',
-) {
-  parseRecordSelection(JSON.stringify(selection), reference);
-  const selected = new Set(selection.selected);
-  const fieldLine = (field: RecordField) => {
-    const label = `**${literal(field.label)}:**`;
-    const sources = field.sources.length ? ` ${links(field.sources)}` : '';
-    if (field.items)
-      return `- ${label}${sources}\n${field.items.map((item) => `  - ${literal(item)}`).join('\n')}`;
-    return `- ${label}${field.text ? ` ${literal(field.text)}` : ''}${sources}`;
-  };
-  const sections = reference.records
-    .filter((record) => selected.has(record.id))
-    .map((record) => {
-      const variantIds = record.fields.find(
-        ({ label }) => label === 'Variant ID (dbSNP)' || label === 'Variant IDs (dbSNP)',
-      )?.sources;
-      const title = record.gene
-        ? links([geneSource(record.gene)])
-        : links(variantIds ?? []) || 'Variant';
-      return `### ${title}\n\n${literal(record.variant)}\n\n${record.fields.map(fieldLine).join('\n')}`;
-    });
-  const parts = opening ? [opening] : [];
-  if (sections.length && reference.genomeSource?.kind === 'example')
-    parts.push(
-      `These results are from the **${literal(reference.genomeSource.label)} public example genome**.`,
-    );
-  if (sections.length) parts.push(sections.join('\n\n---\n\n'));
-  return parts.join('\n\n');
-}
-
-// Draft from only the selected source records; internal IDs and rejected candidates
-// never enter this reference. This ordinary Markdown call retains the profile's
-// supported non-thinking configuration; no runtime prefix or prose is rewritten.
-export function buildEvidenceOpeningContext(
-  question: string,
-  selection: RecordSelection,
-  reference: RecordReference,
-  profile: ModelProfile,
-) {
-  parseRecordSelection(JSON.stringify(selection), reference);
-  const ids = new Set(selection.selected);
-  const selectedReference = {
-    ...(reference.genomeSource ? { genomeSource: reference.genomeSource } : {}),
-    records: reference.records
-      .filter((record) => ids.has(record.id))
-      .map(({ id, origin, ...record }) => record),
-  };
-  return fitConversation([], profile, () => ({
-    messages: conversationMessages(
-      EVIDENCE_OPENING_PROMPT,
-      JSON.stringify({ reference: selectedReference, latestQuestion: question }),
-      [],
-    ),
-    generation: {
-      max_tokens: EVIDENCE_OPENING.maxTokens,
-      presence_penalty: 0,
-      repetition_penalty: 1,
-    },
-  }));
 }

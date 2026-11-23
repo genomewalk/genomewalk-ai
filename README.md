@@ -58,11 +58,11 @@ The build context is allowlisted. Checks and compilation run without network acc
 ## The flow
 
 1. **Prepare once:** read the selected file in a worker, match exact supported alleles to the public catalog, and embed the matched annotations locally.
-2. **Understand the question:** the selected local model chooses Specific topic, All matches, or Other, using available conversation history.
-3. **Retrieve:** topic search orders matches by semantic similarity alone. Search text contains conditions, gene names and variant IDs; full annotations, including frequencies, remain available to the answer model. An overview orders all usable matches by catalog fields. Other answers without new retrieval.
-4. **Answer:** up to ten new candidates enter the selection context as identifiers and factual descriptions, with complete earlier turns that fit. The model selects up to three supplied record IDs and writes a short opening from their full source fields. The app displays the selected source facts and links unchanged.
+2. **Understand the question:** the selected local model chooses Specific topic, Overview, General, or Follow-up, using available conversation history.
+3. **Retrieve:** topic search orders matches by semantic similarity alone. Search text contains conditions, gene names and variant IDs; full annotations, including frequencies, remain available to the answer model. An overview orders all usable matches by catalog fields. General and Follow-up answer without retrieval.
+4. **Answer:** Specific topic and Overview send up to three candidates as factual descriptions and source links, without old conversation. One answer call is instructed to discuss at most three relevant records. Follow-up receives only the previous conversation and question; General receives only the new question. The chat displays that generated response; original candidate fields remain available in Model input. There is no separate selector call. The three-record input cap is enforced by code; the three-record response limit is a model instruction.
 
-There are no question-keyword, gene-name, or disease-specific routing rules. General explanations use model knowledge; personal variant facts come from the verified reference. This design limits factual rewriting, but the generated opening and general answers can still be wrong.
+There are no question-keyword, gene-name, or disease-specific routing rules. General explanations use model knowledge; new variant facts come from the verified reference; follow-ups rely on earlier generated conversation. Generated answers can misinterpret or omit evidence; original source fields and links remain available for inspection.
 
 [Architecture, ranking and privacy boundaries](docs/ARCHITECTURE.md).
 
@@ -77,7 +77,7 @@ There are no question-keyword, gene-name, or disease-specific routing rules. Gen
 | `src/lib/local-catalog.ts`, `public-files.ts`  | Static references, validation and deployment paths                                      |
 | `src/lib/embeddings.worker.ts`                 | Local embedding index and cosine similarity                                             |
 | `src/lib/evidence-ranking.ts`                  | Shared field-based retrieval policy                                                     |
-| `src/lib/evidence-answer.ts`                   | Record selection, short opening and exact source rendering                              |
+| `src/lib/evidence-answer.ts`                   | Original record fields and compact answer descriptions with source links                |
 | `src/lib/local-model-session.ts`, `webllm.ts`  | Model selection, worker lifetime and inference                                          |
 | `src/config/`, `src/prompts/`                  | Model profiles, budgets, ranking policy and shared prompts                              |
 | `src/vendor/genomewalk/`                       | Genomewalk parsing and validation modules, with documented adaptations and fingerprints |
@@ -95,7 +95,7 @@ npm run data:sync -- /path/to/genomewalk
 npm run check:release
 ```
 
-Synchronization copies only the two prepared catalogs, their metadata and consumer rsID sidecars. It checks sizes, SHA-256 hashes and lookup bindings, then records a small static release manifest. Saved matches are invalidated when the genome, reference content or matcher version changes. [Reference maintenance](docs/REFERENCES.md).
+Synchronization copies the two prepared catalogs, their metadata, consumer rsID sidecars and Genomewalk's prepared publication labels. It checks sizes, SHA-256 hashes, lookup bindings and publication coverage, then records a small static release manifest. Saved matches are invalidated when the genome, reference content or matcher version changes. Publication labels are added locally from static files; the browser never requests PubMed metadata. [Reference maintenance](docs/REFERENCES.md).
 
 ## Development
 

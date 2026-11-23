@@ -20,10 +20,8 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
   >;
   const plan = steps.query.data?.response;
   const context = message.context;
-  const general = plan?.mode === 'other';
-  const records = context?.recordReference?.records;
-  const earlier = records?.filter((record) => record.origin === 'earlier').length;
-  const selectedCount = message.answerSelection?.selected.length;
+  const followup = plan?.mode === 'followup';
+  const general = plan?.mode === 'other' || followup;
   const stages = [
     {
       step: steps.query,
@@ -46,7 +44,7 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
         ? 'No new variant records'
         : `${count(steps.semantic.data?.total)} matches considered`,
       detail: general
-        ? ['Use the question and conversation.']
+        ? [followup ? 'Use the previous conversation.' : 'Use only the new question.']
         : [`Up to ${context?.maxNewRecords ?? MAX_CANDIDATES} new records for the answer.`],
     },
     {
@@ -54,11 +52,15 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
       title: 'Prepare the model input',
       icon: 'database' as const,
       description: general
-        ? ['Question, instructions and', 'recent conversation.']
-        : ['Question, instructions, conversation', 'and selected evidence.'],
+        ? followup
+          ? ['Question, instructions and', 'previous conversation.']
+          : ['New question and instructions.']
+        : ['Question, instructions', 'and candidate records.'],
       value: general
-        ? 'Question + conversation'
-        : `${count(context?.included)} new + ${count(earlier)} earlier records`,
+        ? followup
+          ? 'Question + conversation'
+          : 'New question only'
+        : `${count(context?.included)} candidate records`,
       detail: context
         ? [
             `Earlier exchanges included: ${count(context.historyTurns)}`,
@@ -72,8 +74,8 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
       icon: 'cpu' as const,
       description: general
         ? ['The local model explains or', 'asks for clarification.']
-        : ['The local model selects records', 'and writes a short opening.'],
-      value: general ? 'Conversation response' : `${count(selectedCount)} records in the answer`,
+        : ['The local model answers using', 'the relevant candidates.'],
+      value: general ? 'Conversation response' : 'One answer call',
       detail: general
         ? ['General explanations can use', 'model knowledge.']
         : ['Variant details and links come', 'from the source records.'],

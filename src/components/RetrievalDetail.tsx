@@ -14,9 +14,8 @@ export function RetrievalDetail({ message, step }: { message: ChatMessage; step:
     return (
       <>
         <p className="step-description">
-          This question continues directly to the local model, using your question and recent
-          conversation. No new genome records are searched or added. The next step shows the
-          conversation included for the answer.
+          This question goes directly to the local model. Follow-up uses previous conversation;
+          General uses only the new question. No genome records are searched or added.
         </p>
         <RequestDiagram message={message} selected={1} />
       </>
@@ -43,7 +42,7 @@ export function RetrievalDetail({ message, step }: { message: ChatMessage; step:
           <h3>Matches in review order</h3>
           <p>
             Showing the first {data.rows.length} of {data.total?.toLocaleString()} matches. Expand a
-            gene to inspect its record. Follow-ups may also include earlier records.
+            gene to inspect its record.
           </p>
           <div
             className="local-table-scroll"

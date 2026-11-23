@@ -1,7 +1,8 @@
 export const PLAN_LABELS = Object.freeze({
   search: 'Specific topic',
-  overview: 'All matches',
-  other: 'Other',
+  overview: 'Overview',
+  other: 'General',
+  followup: 'Follow-up',
 });
 
 export const QUERY_SCHEMA = Object.freeze({

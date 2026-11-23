@@ -1,11 +1,9 @@
 import type { ModelProfile, ModelMessage, Generation } from './types.ts';
-import type { compactMatch } from './match-reference.ts';
 
 export interface ConversationTurn {
   question: string;
   answer: string;
   identity?: string;
-  records?: ReturnType<typeof compactMatch>[];
 }
 interface ConversationRequest {
   messages: ModelMessage[];

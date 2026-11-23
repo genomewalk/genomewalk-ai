@@ -22,3 +22,14 @@ export const QUERY_GENERATION: Generation = Object.freeze({
   extra_body: Object.freeze({}),
   response_format: Object.freeze({ type: 'json_object', schema: JSON.stringify(QUERY_SCHEMA) }),
 });
+
+// A follow-up requires an earlier exchange in the actual planning input.
+export const QUERY_WITHOUT_HISTORY: Generation = Object.freeze({
+  ...QUERY_GENERATION,
+  response_format: Object.freeze({
+    type: 'json_object',
+    schema: JSON.stringify({
+      anyOf: QUERY_SCHEMA.anyOf.filter((branch) => branch.properties.mode.enum[0] !== 'followup'),
+    }),
+  }),
+});

@@ -3,17 +3,11 @@ import { fakeEngine, fakeSearch } from './helpers/inference.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rankSemantic } from '../src/lib/evidence-ranking.ts';
-import { MAX_CANDIDATES, MAX_RECORDS } from '../src/config/evidence-answer.ts';
+import { MAX_CANDIDATES } from '../src/config/evidence-answer.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
-import { EMBEDDINGS_ANSWER_PROMPT, EVIDENCE_OPENING_PROMPT } from '../src/prompts/embeddings.ts';
+import { EMBEDDINGS_ANSWER_PROMPT } from '../src/prompts/embeddings.ts';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
-import {
-  buildEvidenceOpeningContext,
-  parseRecordSelection,
-  renderRecordSelection,
-  selectionSchema,
-} from '../src/lib/evidence-answer.ts';
 import { getModelProfile } from '../src/config/models/index.ts';
 
 const records = Array.from({ length: 30 }, (_, index) => ({
@@ -115,7 +109,7 @@ test('partial pools, duplicate indices and invalid similarities fail visibly', (
   assert.deepEqual(rankSemantic([], []), []);
 });
 
-test('session admits ten candidates and displays three selections with shared prompts and Other bypass', async () => {
+test('session answers once from three candidates with shared prompts and Other bypass', async () => {
   const requests: ModelRequest[] = [];
   const operations: string[] = [];
   let plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
@@ -159,11 +153,10 @@ test('session admits ten candidates and displays three selections with shared pr
   const first = session.state.messages.at(-1)!;
   assert.equal(first!.context!.included, MAX_CANDIDATES);
   assert.equal(first!.context!.maxNewRecords, MAX_CANDIDATES);
-  assert.equal(first!.context!.recordReference!.maxSelectedRecords, MAX_RECORDS);
-  assert.equal(JSON.parse(requests[1]!.response_format!.schema!).properties.selected.maxItems, 3);
-  assert.equal(first!.answerSelection!.selected.length, 3);
-  assert.equal(first!.content.split('**Overall frequency:**').length - 1, 3);
-  assert.equal(JSON.parse(requests[2]!.messages.at(-1)!.content).reference.records.length, 3);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]!.response_format, undefined);
+  assert.equal(first!.content, 'The supplied records list this condition.');
+  assert.equal(JSON.parse(requests[1]!.messages.at(-1)!.content).reference.records.length, 3);
   assert.equal(first!.context!.evidence!.coverage.currentTurn.retrievedCandidates, 30);
   assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
   assert.equal(
@@ -175,12 +168,11 @@ test('session admits ten candidates and displays three selections with shared pr
     30,
   );
   assert.equal(requests[1]!.messages[0]!.content, EMBEDDINGS_ANSWER_PROMPT);
-  assert.equal(requests[2]!.messages[0]!.content, EVIDENCE_OPENING_PROMPT);
   plan = { mode: 'search', query: 'another topic resolved by planner' };
   await session.send('Follow-up or topic change');
   const follow = session.state.messages.at(-1)!;
   assert.equal(session.state.error, null);
-  assert.equal(follow!.context!.historyTurns, 1);
+  assert.equal(follow!.context!.historyTurns, 0);
   assert.equal(follow!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
   assert.equal(
     follow!.context!.evidence!.earlierMatches.length,
@@ -198,85 +190,14 @@ test('session admits ten candidates and displays three selections with shared pr
   session.dispose();
 });
 
-test('three-record default covers new and earlier selections', () => {
-  const profile = getModelProfile('qwen3.5-9b'),
-    plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
-  const first = buildEmbeddingsContext('First', records, result, profile, plan, [], {
-    maxNewRecords: MAX_RECORDS,
-  });
-  const history = [
-    { question: 'First', answer: 'Earlier source records', records: first.evidence.matches },
-  ];
-  const context = buildEmbeddingsContext(
-    'Compare',
-    records.slice(3),
-    result,
-    profile,
-    plan,
-    history,
-    { maxNewRecords: MAX_RECORDS, maxSelectedRecords: MAX_RECORDS },
-  );
-  assert.equal(first.included, 3);
-  assert.equal(selectionSchema(first.recordReference).properties.selected.maxItems, 3);
-  assert.equal(context.recordReference.records.length, 6);
-  assert.equal(selectionSchema(context.recordReference).properties.selected.maxItems, 3);
-  const selected = { selected: ['v1', 'v3', 'v5'] };
-  assert.deepEqual(
-    parseRecordSelection(JSON.stringify(selected), context.recordReference),
-    selected,
-  );
-  assert.equal(
-    renderRecordSelection(selected, context.recordReference).split('**ClinVar classification:**')
-      .length - 1,
-    3,
-  );
-  const opening = buildEvidenceOpeningContext(
-    'Compare',
-    selected,
-    context.recordReference,
-    profile,
-  );
-  assert.equal(JSON.parse(opening.messages.at(-1)!.content).reference.records.length, 3);
-  assert.throws(() =>
-    parseRecordSelection('{"selected":["v1","v2","v3","v4"]}', context.recordReference),
-  );
-  for (const maxSelectedRecords of [0, 5, 2.5, '3'])
-    assert.throws(
-      () =>
-        buildEmbeddingsContext('Compare', records, result, profile, plan, [], {
-          // @ts-expect-error Deliberately test invalid limits from an untyped caller.
-          maxSelectedRecords,
-        }),
-      /Selected-record limit/,
-    );
-});
-
-test('recent verified records survive when new candidates would crowd out the last turn', () => {
+test('a small context omits whole candidates and never exceeds three', () => {
   const plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
-  const fullProfile = getModelProfile('qwen3.5-9b');
-  const initial = buildEmbeddingsContext('First', records, result, fullProfile, plan, [], {
-    maxNewRecords: MAX_RECORDS,
-  });
-  const history = [
-    { question: 'First', answer: 'Earlier findings', records: initial.evidence.matches },
-  ];
-  const reserved = buildEmbeddingsContext('Follow up', [], result, fullProfile, plan, history);
-  // A valid budget that fits the complete recent turn, but not three more records.
-  const profile = { ...fullProfile, contextWindowTokens: reserved.inputBytes + 4096 + 768 + 500 };
-  const fresh = buildEmbeddingsContext('Follow up', records.slice(3), result, profile, plan);
-  const follow = buildEmbeddingsContext(
-    'Follow up',
-    records.slice(3),
-    result,
-    profile,
-    plan,
-    history,
-  );
-  assert.equal(follow.historyTurns, 1);
-  assert.deepEqual(follow.evidence.earlierMatches, history[0]!.records);
-  assert.ok(fresh.included > follow.included);
-  assert.ok(follow.consideredRows.some((row) => row.status === 'context_budget'));
-  assert.ok(follow.inputBytes <= follow.inputByteLimit);
+  const profile = { ...getModelProfile('qwen3.5-9b'), contextWindowTokens: 7000 };
+  const c = buildEmbeddingsContext('Question', records, result, profile, plan);
+  assert.ok(c.included < 3);
+  assert.ok(c.consideredRows.some((row) => row.status === 'context_budget'));
+  assert.ok(c.inputBytes <= c.inputByteLimit);
+  assert.equal(c.historyTurns, 0);
 });
 
 test('a third record exceeding the context budget is omitted whole without taking a lower-ranked substitute', () => {
@@ -292,14 +213,12 @@ test('a third record exceeding the context budget is omitted whole without takin
     result,
     getModelProfile('qwen3-4b'),
     { mode: 'search', query: 'synthetic topic' },
-    [],
-    { maxNewRecords: MAX_RECORDS, maxSelectedRecords: MAX_RECORDS },
+    { maxNewRecords: 3 },
   );
   assert.equal(context.maxNewRecords, 3);
   assert.equal(context.included, 2);
   assert.equal(context.consideredRows[2]!.status, 'context_budget');
   assert.equal(context.consideredRows.length, 3);
-  assert.equal(selectionSchema(context.recordReference).properties.selected.maxItems, 2);
   assert.deepEqual(
     context.evidence.matches.map((record) => record.gene),
     ['SYNTHETIC0', 'SYNTHETIC1'],

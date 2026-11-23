@@ -43,13 +43,10 @@ import { PLAN_LABELS } from '../config/search-scope.ts';
 import { parseLocalQuery, buildLocalQueryContext } from './local-query.ts';
 import { PREVIEW_LIMIT } from '../config/evidence-ranking.ts';
 import { MatchCache, matchCacheIdentity } from './match-cache.ts';
-import {
-  parseRecordSelection,
-  renderRecordSelection,
-  buildEvidenceOpeningContext,
-} from './evidence-answer.ts';
 import { buildGeneralContext } from './general-context.ts';
-import { loadReferenceConfig } from './public-files.ts';
+import { loadReferenceConfig, referenceFetcher } from './public-files.ts';
+import { PublicationCatalogue } from '../vendor/genomewalk/catalogues/publications.ts';
+import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
 
 const identity = (config: GenomeConfig) =>
   JSON.stringify([
@@ -61,6 +58,7 @@ const identity = (config: GenomeConfig) =>
 
 export class EmbeddingsSession {
   fetch: Fetcher;
+  publications: PublicationCatalogue;
   local: NonNullable<SessionOptions['local']>;
   matcher: typeof matchLocalGenome;
   search: SearchClient;
@@ -88,6 +86,7 @@ export class EmbeddingsSession {
     matchCache = new MatchCache(),
   }: SessionOptions = {}) {
     this.fetch = fetchImpl;
+    this.publications = new PublicationCatalogue(referenceFetcher(fetchImpl));
     this.local = local;
     this.matcher = matcher;
     this.search = search;
@@ -191,7 +190,7 @@ export class EmbeddingsSession {
     if (!config.localGenome?.available)
       throw new Error('Choose a supported genome file or use the public example.');
     const key = identity(config);
-    const priorEvidence = this.history.findLast((turn) => turn.records?.length);
+    const priorEvidence = this.history.findLast((turn) => turn.identity);
     if (priorEvidence && priorEvidence.identity !== key)
       throw new Error(
         'The genome or catalog changed. Start a new conversation before combining evidence.',
@@ -468,8 +467,8 @@ export class EmbeddingsSession {
           ...historyBudget,
         },
       });
-      if (plan.mode === 'other') {
-        await this.answerGeneral(id, question, lease, signal);
+      if (plan.mode === 'other' || plan.mode === 'followup') {
+        await this.answerConversation(id, question, lease, signal, plan.mode === 'followup');
         return true;
       }
       const prepared = await this.prepareIndex(signal, id);
@@ -479,17 +478,16 @@ export class EmbeddingsSession {
         status: 'running',
         summary: 'Preparing compact records within the selected model’s context budget…',
       });
-      const context = buildEmbeddingsContext(
-        question,
-        ranked,
-        prepared.result,
-        lease.model,
-        plan,
-        this.history,
-        {
-          genomeSource: this.genome,
-        },
-      );
+      // Public metadata comes from Genomewalk's static shards, never a PubMed API.
+      // Missing labels leave the original PMID links usable.
+      const publicationLabels = await this.publications
+        .load(ranked.slice(0, MAX_CANDIDATES).flatMap((row) => (row.pmids ?? '').split(',')))
+        .catch(() => ({}));
+      signal.throwIfAborted();
+      const context = buildEmbeddingsContext(question, ranked, prepared.result, lease.model, plan, {
+        genomeSource: this.genome,
+        publicationLabels,
+      });
       const { messages, ...details } = context;
       this.updateMessage(id, { context: details, stage: 'local' });
       this.step(id, 'context', { data: { messages, ...details } });
@@ -510,81 +508,38 @@ export class EmbeddingsSession {
             summary: `${context.included} current records sent · ${context.historyTurns} earlier turns · ${context.inputBytes.toLocaleString()} input bytes`,
             data: { ...details, submitted: true, request: structuredClone(request) },
           });
-          this.step(id, 'answer', { status: 'running', summary: 'Selecting relevant records…' });
+          this.step(id, 'answer', {
+            status: 'running',
+            summary: 'Answering from relevant candidates…',
+          });
         },
       })) {
         raw += chunk.choices?.[0]?.delta?.content ?? '';
         finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
         usage = chunk.usage ?? usage;
-        // Do not display partial JSON or unvalidated selections as an answer.
+        // Publish only a complete answer; keep incomplete output out of conversation history.
         this.updateMessage(id, { finishReason, usage });
       }
       this.step(id, 'answer', { data: { raw, finishReason, usage } });
-      if (finishReason !== 'stop')
-        throw new Error(
-          'The local record selection did not finish normally. No partial answer was displayed. Please try again.',
-        );
-      const selection = parseRecordSelection(raw, context.recordReference);
-      const openingContext = buildEvidenceOpeningContext(
+      if (finishReason !== 'stop' || !raw.trim())
+        throw new Error('The local answer did not finish normally. Please try again.');
+      // Follow-ups use completed conversation only, never a second source payload.
+      this.history.push({
+        identity: prepared.identity,
         question,
-        selection,
-        context.recordReference,
-        lease.model,
-      );
-      let opening = '',
-        openingFinish,
-        openingUsage,
-        openingRequest;
-      this.step(id, 'answer', {
-        status: 'running',
-        summary: 'Writing a brief answer from the selected records…',
+        answer: raw,
       });
-      for await (const chunk of this.local.completePrivate(openingContext.messages, {
-        signal,
-        lease,
-        generation: openingContext.generation,
-        onRequest: (request) => {
-          openingRequest = structuredClone(request);
-        },
-      })) {
-        opening += chunk.choices?.[0]?.delta?.content ?? '';
-        openingFinish = chunk.choices?.[0]?.finish_reason ?? openingFinish;
-        openingUsage = chunk.usage ?? openingUsage;
-      }
-      const openingTrace = {
-        request: openingRequest,
-        raw: opening,
-        finishReason: openingFinish,
-        usage: openingUsage,
-        inputBytes: openingContext.inputBytes,
-        inputByteLimit: openingContext.inputByteLimit,
-        historyTurns: openingContext.historyTurns,
-        omittedHistoryTurns: openingContext.omittedHistoryTurns,
-      };
-      this.step(id, 'answer', {
-        data: { raw, selection, finishReason, usage, opening: openingTrace },
-      });
-      if (openingFinish !== 'stop' || !opening.trim())
-        throw new Error('The short answer did not finish normally. Please try again.');
-      const content = renderRecordSelection(selection, context.recordReference, opening);
-      const selected = new Set(selection.selected);
-      const supplied = [...context.evidence.matches, ...context.evidence.earlierMatches];
-      const records = supplied.filter((_, i) =>
-        selected.has(context.recordReference.records[i]!.id),
-      );
-      this.history.push({ identity: prepared.identity, question, answer: content, records });
       this.updateMessage(id, {
         status: 'complete',
-        content,
-        answerSelection: selection,
+        content: raw,
         evidenceAnswer: true,
-        usage: openingUsage,
-        finishReason: openingFinish,
+        usage,
+        finishReason,
       });
       this.step(id, 'answer', {
         status: 'complete',
-        summary: `${selection.selected.length} records selected · brief answer and source details displayed`,
-        data: { raw, selection, rendered: content, finishReason, usage, opening: openingTrace },
+        summary: 'Answered directly from the supplied candidates',
+        data: { raw, finishReason, usage },
       });
       this.end(id, 'complete');
     } catch (error) {
@@ -651,15 +606,29 @@ export class EmbeddingsSession {
     });
     return ordered.map((hit) => matches[hit.index]!);
   }
-  async answerGeneral(id: number, question: string, lease: ModelLease, signal: AbortSignal) {
-    const context = buildGeneralContext(question, this.history, lease.model);
+  async answerConversation(
+    id: number,
+    question: string,
+    lease: ModelLease,
+    signal: AbortSignal,
+    followup: boolean,
+  ) {
+    const context = buildGeneralContext(question, this.history, lease.model, {
+      followup,
+      genomeSource: this.genome,
+    });
     const { messages, ...details } = context;
     for (const step of ['catalog', 'matching', 'index', 'semantic'])
-      this.step(id, step, { status: 'skipped', summary: 'Other: no new genome search.' });
+      this.step(id, step, {
+        status: 'skipped',
+        summary: `${followup ? 'Follow-up' : 'General'}: no new genome search.`,
+      });
     this.updateMessage(id, { general: true, stage: 'local', context: details });
     this.step(id, 'context', {
       status: 'running',
-      summary: 'Preparing the question and conversation history.',
+      summary: followup
+        ? 'Preparing the question and conversation history.'
+        : 'Preparing the new general question.',
       data: { messages, ...details },
     });
     this.update({ progressText: 'Answering on this device…' });
@@ -674,7 +643,9 @@ export class EmbeddingsSession {
         this.updateMessage(id, { context: { ...details, submitted: true } });
         this.step(id, 'context', {
           status: 'complete',
-          summary: 'Question and conversation sent; no new record reference.',
+          summary: followup
+            ? 'Question and conversation sent; no source records.'
+            : 'Question sent without previous conversation or records.',
           data: { ...details, submitted: true, request: structuredClone(request) },
         });
         this.step(id, 'answer', {
@@ -693,7 +664,7 @@ export class EmbeddingsSession {
     const limited = finishReason === 'length';
     if (!limited && finishReason !== 'stop')
       throw new Error('The local answer did not finish normally.');
-    if (!limited) this.history.push({ question, answer: content, records: [] });
+    if (!limited) this.history.push({ question, answer: content });
 
     this.updateMessage(id, { status: 'complete', limited });
     this.step(id, 'answer', {

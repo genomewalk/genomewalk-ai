@@ -1,337 +1,162 @@
-import type { SearchPlan, ReferenceRecord, RecordReference, SourceLink } from '../src/lib/types.ts';
-import type { ConversationTurn } from '../src/lib/conversation-context.ts';
-import { compactMatch } from '../src/lib/match-reference.ts';
+import type { SearchPlan } from '../src/lib/types.ts';
 import test from 'node:test';
-import { localModelRequest } from '../src/lib/local-model-request.ts';
 import assert from 'node:assert/strict';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
-import {
-  parseRecordSelection,
-  renderRecordSelection,
-  selectionSchema,
-  buildSelectionReference,
-  buildEvidenceOpeningContext,
-} from '../src/lib/evidence-answer.ts';
+import { buildAnswerReference } from '../src/lib/evidence-answer.ts';
+import { localModelRequest } from '../src/lib/local-model-request.ts';
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
 import fixture from './fixtures/evidence.json' with { type: 'json' };
 
-const fixturePlan: SearchPlan = { mode: 'search', query: fixture.plan.query };
-const fixtureRows = fixture.rows.map((row, i) => ({ ...row, citation: `C${i + 1}` }));
-const context = (
-  plan: SearchPlan = { mode: 'search', query: fixture.plan.query },
-  rows = fixtureRows,
-  previous: ConversationTurn[] = [],
-) =>
-  buildEmbeddingsContext(
-    fixture.question,
-    rows,
-    { build: 'GRCh38', matches: fixtureRows, issues: [] },
-    LOCAL_MODELS[0]!,
-    plan,
-    previous,
-  );
-const parse = (value: unknown, reference: RecordReference) =>
-  parseRecordSelection(typeof value === 'string' ? value : JSON.stringify(value), reference);
-const field = (record: ReferenceRecord | undefined, label: string) => {
-  const found = record?.fields.find((f) => f.label === label);
-  assert.ok(found);
-  return found;
-};
+const plan: SearchPlan = { mode: 'search', query: fixture.plan.query };
+const rows = fixture.rows.map((row, i) => ({ ...row, citation: `C${i + 1}` }));
+const result = { build: 'GRCh38', matches: rows, issues: [] };
+const context = (candidates = rows) =>
+  buildEmbeddingsContext(fixture.question, candidates, result, LOCAL_MODELS[0]!, plan);
 
-test('hybrid selection descriptions preserve source facts and IDs without changing answer evidence', () => {
-  const c = context(fixturePlan, fixtureRows);
+test('answer candidates preserve every source field and link without duplicate URLs', () => {
+  const c = context([rows[0]!, rows[1]!, rows[3]!]);
   const before = structuredClone(c.recordReference);
-  const hybrid = buildSelectionReference(c.recordReference);
-  const wire = JSON.parse(c.messages.at(-1)!.content).reference;
-  assert.deepEqual(wire, hybrid);
+  const reference = buildAnswerReference(c.recordReference);
+  assert.deepEqual(JSON.parse(c.messages.at(-1)!.content).reference, reference);
   assert.deepEqual(c.recordReference, before);
-  assert.equal(hybrid.maxSelectedRecords, 3);
-  assert.match(hybrid.note, /not mapped to individual conditions/);
-  assert.match(hybrid.note, /no paper contents/);
-  for (const [index, record] of c.recordReference.records.entries()) {
-    const compact = hybrid.records[index]!;
-    assert.equal(compact.id, record.id);
-    assert.equal(compact.origin, record.origin);
-    assert.equal(compact.gene, record.gene);
-    assert.ok(compact.description.includes(record.variant));
-    for (const field of record.fields) {
-      if (field.text) assert.ok(compact.description.includes(field.text));
-      for (const item of field.items ?? []) if (item) assert.ok(compact.description.includes(item));
+  assert.equal(Object.hasOwn(reference, 'note'), false);
+  assert.match(c.messages[0]!.content, /not mapped to individual conditions/);
+  assert.match(c.messages[0]!.content, /no paper text/);
+  for (const [index, original] of c.recordReference.records.entries()) {
+    const record = reference.records[index]!;
+    assert.equal(record.gene, original.gene);
+    assert.ok(record.description.includes(original.variant));
+    for (const field of original.fields) {
+      if (field.text) assert.ok(record.description.includes(field.text));
+      for (const item of field.items ?? []) if (item) assert.ok(record.description.includes(item));
+      for (const link of field.sources)
+        assert.ok(record.sources.some((s) => s.url === link.url && s.label === link.label));
     }
+    assert.equal(new Set(record.sources.map((s) => s.url)).size, record.sources.length);
+    assert.equal(Object.hasOwn(record, 'id'), false, 'No selector-only IDs in the answer request');
+    assert.equal(Object.hasOwn(record, 'origin'), false);
   }
-  assert.deepEqual(hybrid.records[1]!.variant_ids, ['rs757362953']);
-  assert.match(hybrid.records[1]!.description, /ClinVar ID: 575366/);
-  assert.match(hybrid.records[1]!.description, /0\.000949274%/);
-  assert.match(hybrid.records[3]!.description, /PubMed ID: 19917125/);
-  assert.ok(!JSON.stringify(hybrid).includes('https://'));
-  assert.ok(JSON.stringify(hybrid).length < JSON.stringify(c.recordReference).length);
-  const chosen = { selected: ['v4'] };
-  const answer = renderRecordSelection(chosen, c.recordReference);
-  assert.ok(answer.includes('https://pubmed.ncbi.nlm.nih.gov/19917125/'));
-  const opening = buildEvidenceOpeningContext(
-    'Explain',
-    chosen,
-    c.recordReference,
-    LOCAL_MODELS[0]!,
-  );
-  assert.deepEqual(
-    JSON.parse(opening.messages.at(-1)!.content).reference.records[0].fields,
-    before.records[3]!.fields,
-  );
-});
-
-test('a short answer precedes complete source sections with exact fields, in review order', () => {
-  const c = context();
-  const [mixed, conflict] = c.recordReference.records;
-  assert.equal(mixed!.conditionClassifications, null);
-  assert.match(field(mixed, 'ClinVar classification').text!, /Likely pathogenic; protective/);
-  assert.deepEqual(field(conflict, 'Reported classifications').items, [
-    'Uncertain significance (2)',
-    'Likely benign (1)',
-  ]);
-  assert.match(field(conflict, 'Overall frequency').text!, /0.000949274%.*overall/);
-  assert.match(field(conflict, 'Highest population frequency').text!, /0.0171116%.*Middle Eastern/);
-  const selection = { selected: ['v2', 'v1'] },
-    opening = 'These two records list cancer-related conditions.';
-  const before = structuredClone(selection);
-  const output = renderRecordSelection(selection, c.recordReference, opening);
-  assert.deepEqual(selection, before, 'Rendering never changes the model selection');
-  assert.ok(output.startsWith(opening + '\n\n### '));
-  assert.ok(output.indexOf('CDKN2B') < output.indexOf('PDGFRA'), 'Review order is preserved');
+  assert.deepEqual(reference.records[1]!.variant_ids, ['rs757362953']);
+  assert.doesNotMatch(reference.records[1]!.description, /ClinVar ID:/);
   assert.ok(
-    output.includes(
-      '### [CDKN2B](https://www.ncbi.nlm.nih.gov/gene/?term=CDKN2B%5Bsym%5D%20AND%20human%5Borgn%5D)\n\n' +
-        mixed!.variant,
+    reference.records[1]!.sources.some(
+      (source) => source.url === 'https://www.ncbi.nlm.nih.gov/clinvar/variation/575366/',
     ),
   );
+  assert.match(reference.records[1]!.description, /0\.000949274%/);
+  assert.match(reference.records[1]!.description, /0\.0171116%.*Middle Eastern/);
+  assert.match(reference.records[0]!.description, /Likely pathogenic; protective/);
+  assert.match(
+    reference.records[1]!.description,
+    /Uncertain significance \(2\); Likely benign \(1\)/,
+  );
   assert.ok(
-    JSON.parse(c.messages[1]!.content).reference.records[0]!.description.includes(mixed!.variant),
+    reference.records[2]!.sources.some(
+      (s) => s.url === 'https://pubmed.ncbi.nlm.nih.gov/19917125/',
+    ),
+  );
+  assert.ok(reference.records[0]!.sources.some((s) => s.url.includes('/gene/?term=CDKN2B')));
+});
+
+test('publication links and absence remain source facts, never paper contents', () => {
+  const c = context(rows.slice(0, 2).map((row, i) => ({ ...row, pmids: i ? '12345,67890' : '' })));
+  const reference = buildAnswerReference(c.recordReference);
+  assert.match(reference.records[0]!.description, /No publication links are supplied/);
+  assert.match(
+    reference.records[1]!.description,
+    /2 publication links are supplied; paper contents are not included/,
   );
   assert.deepEqual(
-    JSON.parse(c.messages[1]!.content).scope,
-    fixturePlan,
-    'The selector receives the same resolved scope used for retrieval',
+    reference.records[1]!.sources.filter((s) => s.label.startsWith('PubMed')),
+    [
+      { label: 'PubMed 12345', url: 'https://pubmed.ncbi.nlm.nih.gov/12345/' },
+      { label: 'PubMed 67890', url: 'https://pubmed.ncbi.nlm.nih.gov/67890/' },
+    ],
   );
-  for (const label of [
-    'Genotype',
-    'ClinVar classification',
-    'Listed conditions',
-    'Review status',
-    'Overall frequency',
-    'Highest population frequency',
-    'Publications',
-  ]) {
-    assert.equal(
-      output.split(`**${label}:**`).length - 1,
-      2,
-      `${label} appears once for each record`,
-    );
-  }
-  assert.equal(output.split('Uncertain significance \\(2\\)').length - 1, 1);
-  assert.ok(output.includes('0.000949274%'));
-  assert.match(output, /Middle Eastern/);
-  assert.match(output, /gnomAD/);
-  assert.ok(!output.includes('Personal disease risk'));
 });
 
-test('schema accepts only valid whole-record IDs without prose or legacy fields', () => {
-  const r = context().recordReference;
-  assert.deepEqual(selectionSchema(r).properties.selected.items.enum, ['v1', 'v2', 'v3', 'v4']);
-  assert.deepEqual(selectionSchema(r).required, ['selected']);
-  const valid = { selected: [] };
-  for (const value of [
-    { selected: ['v1.annotation'] },
-    { selected: ['v999'] },
-    { selected: ['v1', 'v1'] },
-    { selected: [null] },
-    { ...valid, answer: 'Unexpected prose' },
-    { ...valid, limitation: 'none' },
-    {},
-    '```json\n' + JSON.stringify(valid) + '\n```',
-    '<think></think>' + JSON.stringify(valid),
-  ])
-    assert.throws(() => parse(value, r));
-  assert.deepEqual(parse(valid, r), valid);
-});
-
-test('opening context contains only chosen source records, no IDs, and shared rules across models', () => {
-  const reference = context().recordReference;
-  const selection = { selected: ['v2'] };
-  const first = buildEvidenceOpeningContext('Explain this', selection, reference, LOCAL_MODELS[0]!);
-  for (const model of LOCAL_MODELS) {
-    const c = buildEvidenceOpeningContext('Explain this', selection, reference, model);
-    assert.deepEqual(c.messages, first.messages);
-    assert.deepEqual(c.generation, first.generation);
-    assert.equal(c.messages.length, 2);
-    assert.equal(c.generation.max_tokens, 512);
-    assert.equal(
-      'response_format' in c.generation ? c.generation.response_format : undefined,
-      undefined,
-    );
-    assert.equal('extra_body' in c.generation ? c.generation.extra_body : undefined, undefined);
-    const payload = JSON.parse(c.messages.at(-1)!.content);
-    assert.equal(payload.scope, undefined, 'A search rewrite is not evidence for the opening');
-    const supplied = payload.reference.records;
-    assert.equal(supplied.length, 1);
-    assert.equal(supplied[0]!.gene, 'PDGFRA');
-    assert.equal(supplied[0]!.id, undefined);
-    assert.equal(supplied[0]!.origin, undefined);
-    assert.deepEqual(supplied[0]!.fields, reference.records[1]!.fields);
-    assert.ok(c.inputBytes <= c.inputByteLimit);
-  }
-  const opening = 'A brief **answer** from the supplied fields.';
-  assert.ok(renderRecordSelection(selection, reference, opening).startsWith(opening));
-  // Source fields are copied; generated prose is displayed through the ordinary
-  // safe Markdown renderer without semantic repairs or a claim of validation.
-  const unsupported = 'An unsupported assertion for this test.';
-  assert.ok(renderRecordSelection(selection, reference, unsupported).startsWith(unsupported));
-});
-
-test('every supplied publication link is displayed; missing links never imply supplied paper contents', () => {
-  const rows = fixtureRows.slice(0, 2).map((row, i) => ({ ...row, pmids: i ? '12345,67890' : '' }));
-  const reference = context(fixturePlan, rows).recordReference;
-  const missing = field(reference.records[0]!, 'Publications');
-  const linked = field(reference.records[1]!, 'Publications');
-  assert.equal(
-    missing.text,
-    'No publication links are supplied for this variant in the catalog reference.',
+test('prepared citation labels reach the answer and inspector without changing evidence or URLs', () => {
+  const candidates = [{ ...rows[0]!, pmids: '12345,67890' }];
+  const original = context(candidates);
+  const labeled = buildEmbeddingsContext(
+    fixture.question,
+    candidates,
+    result,
+    LOCAL_MODELS[0]!,
+    plan,
+    { publicationLabels: { '12345': 'Example et al., Journal 2020', '67890': null } },
   );
-  assert.equal(
-    linked.text,
-    '2 publication links are supplied; paper contents are not included in this reference.',
-  );
-  assert.deepEqual(missing.sources, []);
-  assert.deepEqual(
-    linked.sources.map((s: SourceLink) => s.url),
-    ['https://pubmed.ncbi.nlm.nih.gov/12345/', 'https://pubmed.ncbi.nlm.nih.gov/67890/'],
-  );
-  const withoutLinks = renderRecordSelection(
-    { selected: ['v1'] },
-    reference,
-    'The supplied reference does not include paper contents or conclusions.',
-  );
-  assert.ok(withoutLinks.includes(missing.text));
+  assert.deepEqual(labeled.evidence, original.evidence);
+  const reference = buildAnswerReference(labeled.recordReference);
+  const publications = labeled.recordReference.records[0]!.fields.find(
+    (field) => field.label === 'Publications',
+  )!;
+  assert.deepEqual(publications.sources, [
+    { label: 'Example et al., Journal 2020', url: 'https://pubmed.ncbi.nlm.nih.gov/12345/' },
+    { label: 'PubMed 67890', url: 'https://pubmed.ncbi.nlm.nih.gov/67890/' },
+  ]);
   assert.ok(
-    withoutLinks.includes('The supplied reference does not include paper contents or conclusions.'),
+    reference.records[0]!.sources.some((source) => source.label === publications.sources[0]!.label),
   );
-  assert.ok(!withoutLinks.includes('pubmed.ncbi.nlm.nih.gov'));
-  const withLinks = renderRecordSelection(
-    { selected: ['v2'] },
-    reference,
-    'The record supplies publication links.',
-  );
-  for (const source of linked.sources) assert.ok(withLinks.includes(source.url));
-  assert.ok(!withLinks.includes('No publication links'));
-});
-
-test('no evidence allows only an empty record selection, not a negative genome screen', () => {
-  const r = context(fixturePlan, []).recordReference;
-  assert.equal(selectionSchema(r).properties.selected.maxItems, 0);
-  assert.throws(() => parse({ selected: ['unavailable'] }, r));
-  assert.equal(
-    renderRecordSelection({ selected: [] }, r, 'I could not answer that from the supplied facts.'),
-    'I could not answer that from the supplied facts.',
-  );
-});
-
-test('follow-ups preserve complete source sections; earlier prose stays outside the source reference', () => {
-  const initial = context(fixturePlan, [fixtureRows[3]!]);
-  const previous = [
-    {
-      question: 'Review BLM',
-      answer: 'INVENTED_PATHOGENIC_VOTE',
-      records: initial.evidence.matches,
-    },
-  ];
-  const follow = context({ mode: 'search', query: 'BLM' }, [], previous);
-  assert.ok(JSON.stringify(follow.messages).includes('INVENTED_PATHOGENIC_VOTE'));
-  assert.ok(!JSON.stringify(follow.recordReference).includes('INVENTED_PATHOGENIC_VOTE'));
-  const papers = field(follow.recordReference.records[0]!, 'Publications');
-  assert.equal(papers.sources.length, compactMatch(fixtureRows[3]!).sources.PubMed!.length);
-  const selection = { selected: ['v1'] };
-  assert.equal(
-    renderRecordSelection(selection, initial.recordReference),
-    renderRecordSelection(selection, follow.recordReference),
-  );
-});
-
-test('all models share the record-selection contract and full configured context', () => {
-  for (const model of LOCAL_MODELS) {
-    const c = buildEmbeddingsContext(
-      fixture.question,
-      fixtureRows,
-      { build: 'GRCh38', matches: fixtureRows, issues: [] },
-      model,
-      fixturePlan,
+  assert.doesNotMatch(reference.records[0]!.description, /PubMed ID:/);
+  for (const source of publications.sources)
+    assert.ok(
+      reference.records[0]!.sources.some(
+        (candidate) => candidate.label === source.label && candidate.url === source.url,
+      ),
     );
-    assert.equal(c.messages[0]!.content, context().messages[0]!.content);
-    assert.deepEqual(c.generation, context().generation);
+  assert.match(labeled.messages.at(-1)!.content, /Example et al., Journal 2020/);
+});
+
+test('fresh answer inputs contain only the current candidates and preserve source details', () => {
+  const c = context([rows[3]!]);
+  assert.equal(c.messages.length, 2);
+  assert.equal(c.recordReference.records.length, 1);
+  assert.equal(c.recordReference.records[0]!.origin, 'current');
+  const record = buildAnswerReference(c.recordReference).records[0]!;
+  assert.ok(record.description.includes(c.recordReference.records[0]!.variant));
+  assert.ok(record.sources.length);
+});
+
+test('all models share the direct-answer contract, sampling and available context budget', () => {
+  const baseline = context();
+  for (const model of LOCAL_MODELS) {
+    const c = buildEmbeddingsContext(fixture.question, rows, result, model, plan);
+    assert.deepEqual(c.messages, baseline.messages);
+    assert.deepEqual(c.generation, baseline.generation);
     const request = localModelRequest(model, c.messages, c.generation);
     assert.equal(request.temperature, 0);
     assert.equal(request.top_p, 1);
     assert.equal(request.seed, 42);
-    assert.deepEqual('extra_body' in c.generation ? c.generation.extra_body : undefined, {});
-    assert.ok(!Object.hasOwn(c.generation, 'max_tokens'));
+    assert.equal(request.response_format, undefined);
+    assert.deepEqual(request.extra_body, model.extraBody);
+    assert.equal(request.max_tokens, 2048);
     assert.equal(c.responseTokenLimit, model.contextWindowTokens);
     assert.ok(c.inputBytes <= c.inputByteLimit);
   }
 });
 
-test('three-record output limit includes earlier evidence without silently changing selections', () => {
-  const first = context();
-  const c = context(fixturePlan, fixtureRows.slice(2), [
-    { question: 'Prior', answer: 'Prior cards', records: first.evidence.matches },
-  ]);
-  assert.equal(c.recordReference.records.length, 4);
-  assert.equal(selectionSchema(c.recordReference).properties.selected.maxItems, 3);
-  assert.throws(() => parse({ selected: ['v1', 'v2', 'v3', 'v4'] }, c.recordReference));
-  const chosen = { selected: ['v1', 'v3'] };
-  assert.deepEqual(parse(chosen, c.recordReference), chosen);
-  const output = renderRecordSelection(chosen, c.recordReference);
-  assert.equal(output.split('**Overall frequency:**').length - 1, 2);
-  assert.equal(output.split('**ClinVar classification:**').length - 1, 2);
+test('missing candidates remain an empty list rather than a negative genome finding', () => {
+  const c = context([]);
+  assert.deepEqual(JSON.parse(c.messages.at(-1)!.content).reference.records, []);
+  assert.equal(c.included, 0);
+  assert.equal(c.recordReference.records.length, 0);
 });
 
-test('catalog rsIDs reach answer details and model reference as dbSNP links; missing or malformed IDs are never guessed', () => {
-  const rows = [
-    { ...fixtureRows[0]!, rsids: '6413458' },
-    {
-      ...fixtureRows[1]!,
-      rsids: '148559653|rs267607614|148559653|rs0|123/?private=value|not-an-rsid',
-    },
-    { ...fixtureRows[2]!, rsids: '', call: { ...fixtureRows[2]!.call, id: 'rs99999' } },
+test('rsIDs and source URLs survive, while malformed or missing identifiers are not guessed', () => {
+  const candidates = [
+    { ...rows[0]!, rsids: '6413458' },
+    { ...rows[1]!, rsids: '148559653|rs267607614|148559653|rs0|123/?private=value|not-an-rsid' },
+    { ...rows[2]!, rsids: '', call: { ...rows[2]!.call, id: 'rs99999' } },
   ];
-  const c = context(fixturePlan, rows);
-  const [single, multi, missing] = c.recordReference.records;
-  assert.deepEqual(field(single, 'Variant ID (dbSNP)').sources, [
-    { label: 'rs6413458', url: 'https://www.ncbi.nlm.nih.gov/snp/rs6413458' },
-  ]);
-  assert.deepEqual(
-    field(multi, 'Variant IDs (dbSNP)').sources.map((s: SourceLink) => s.label),
-    ['rs148559653', 'rs267607614'],
-  );
-  assert.ok(!missing!.fields.some((f) => f.label.includes('dbSNP')));
-  const output = renderRecordSelection({ selected: ['v1', 'v2', 'v3'] }, c.recordReference);
-  assert.ok(output.includes('[rs6413458](https://www.ncbi.nlm.nih.gov/snp/rs6413458)'));
-  assert.ok(output.includes('[rs267607614](https://www.ncbi.nlm.nih.gov/snp/rs267607614)'));
-  assert.ok(!output.includes('private=value'));
-  assert.ok(!output.includes('rs99999'));
-  const opening = buildEvidenceOpeningContext(
-    'Which IDs are these?',
-    { selected: ['v1'] },
-    c.recordReference,
-    LOCAL_MODELS[0]!,
-  );
-  assert.ok(
-    opening.messages.at(-1)!.content.includes('https://www.ncbi.nlm.nih.gov/snp/rs6413458'),
-  );
-  const follow = context(
-    { mode: 'search', query: 'APOB' },
-    [],
-    [{ question: 'Prior', answer: output, records: c.evidence.matches }],
-  );
-  assert.deepEqual(
-    field(follow.recordReference.records[0]!, 'Variant ID (dbSNP)'),
-    field(single, 'Variant ID (dbSNP)'),
-  );
+  const c = context(candidates);
+  const reference = buildAnswerReference(c.recordReference);
+  assert.deepEqual(reference.records[0]!.variant_ids, ['rs6413458']);
+  assert.deepEqual(reference.records[1]!.variant_ids, ['rs148559653', 'rs267607614']);
+  assert.deepEqual(reference.records[2]!.variant_ids, []);
+  const wire = JSON.stringify(reference);
+  assert.ok(wire.includes('https://www.ncbi.nlm.nih.gov/snp/rs6413458'));
+  assert.ok(wire.includes('https://www.ncbi.nlm.nih.gov/snp/rs267607614'));
+  assert.ok(!wire.includes('private=value'));
+  assert.ok(!wire.includes('rs99999'));
 });

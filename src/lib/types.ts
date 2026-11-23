@@ -174,7 +174,7 @@ export interface CompletionOptions {
   onRequest?: (request: ModelRequest) => void;
 }
 export interface SearchPlan {
-  mode: 'search' | 'overview' | 'other';
+  mode: 'search' | 'overview' | 'other' | 'followup';
   query: string;
 }
 export interface SourceLink {
@@ -200,12 +200,8 @@ export interface GenomeProvenance {
   label: string;
 }
 export interface RecordReference {
-  maxSelectedRecords: number;
   genomeSource?: GenomeProvenance | null;
   records: ReferenceRecord[];
-}
-export interface RecordSelection {
-  selected: string[];
 }
 export interface SemanticHit {
   index: number;

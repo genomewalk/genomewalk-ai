@@ -10,11 +10,11 @@ export const qwen35: ModelProfile = Object.freeze({
   modelId: 'Qwen3.5-9B-q4f16_1-MLC',
   label: 'Qwen3.5 9B',
   shortLabel: 'Qwen3.5 9B',
-  // Full native allocation lost the WebGPU device on the local test machine.
+  // Larger browser allocations have lost the WebGPU device locally.
   // Keep the configured browser window explicit rather than silently retrying
   // smaller contexts. See VALIDATION.md for the tested settings.
   nativeContextWindowTokens: 262144,
-  contextWindowTokens: 131072,
+  contextWindowTokens: 32768,
   generation: Object.freeze({
     temperature: 0.7,
     top_p: 0.8,

@@ -15,5 +15,11 @@
       "cacheKey": "35bd3db27cdf452e1ac4c196053e05fe12ee3279afe55de51f03b29a7c2d05c1",
       "lookupRevision": "0851b0d7c361200969cd3005772f195f4add80f4c5bb28227b9f68668d6f2c3a"
     }
+  },
+  "publications": {
+    "size": 4663,
+    "sha256": "1a3e4cac9404effef9ecb1ef77142fb66d5f5bf43ee0670096c68465aecf3e65",
+    "count": 121372,
+    "labeled": 120601
   }
 }

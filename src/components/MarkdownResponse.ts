@@ -34,13 +34,7 @@ export function MarkdownResponse({ content }: { content: string }) {
   );
 }
 
-export function ResponseSource({
-  content,
-  evidenceAnswer = false,
-}: {
-  content: string;
-  evidenceAnswer?: boolean;
-}) {
+export function ResponseSource({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   return createElement(
     'details',
@@ -50,11 +44,7 @@ export function ResponseSource({
         if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
       },
     },
-    createElement(
-      'summary',
-      null,
-      evidenceAnswer ? 'Displayed answer Markdown' : 'Original Markdown',
-    ),
+    createElement('summary', null, 'Original Markdown'),
     open ? createElement('pre', null, content) : null,
   );
 }

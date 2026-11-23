@@ -1,6 +1,6 @@
-import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, copyFile, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
-import { inspectReferences, REFERENCE_FILES } from './lib/references.ts';
+import { inspectReferences, REFERENCE_FILES, publicationFiles } from './lib/references.ts';
 import { verifiedFile } from './lib/files.ts';
 import { EXAMPLE_GENOME } from '../src/config/example-genome.ts';
 
@@ -8,8 +8,11 @@ const [command, source] = process.argv.slice(2);
 const target = resolve('public/ref');
 if (command === 'sync' && source) {
   const root = resolve(source, 'public/ref');
+  if (root === target) throw new Error('Choose the separate Genomewalk checkout as the source.');
   const release = await inspectReferences(root);
-  for (const file of REFERENCE_FILES) {
+  // Replace generated shards so obsolete releases cannot enter the static export.
+  await rm(join(target, 'publications'), { recursive: true, force: true });
+  for (const file of [...REFERENCE_FILES, ...(await publicationFiles(root))]) {
     await mkdir(dirname(join(target, file)), { recursive: true });
     await copyFile(join(root, file), join(target, file));
   }

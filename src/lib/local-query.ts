@@ -2,7 +2,7 @@ import type { ModelProfile, SearchPlan } from './types.ts';
 import type { ConversationTurn } from './conversation-context.ts';
 import { LOCAL_QUERY_PROMPT } from '../prompts/embeddings.ts';
 import { PLAN_LABELS } from '../config/search-scope.ts';
-import { QUERY_GENERATION } from '../config/embeddings.ts';
+import { QUERY_GENERATION, QUERY_WITHOUT_HISTORY } from '../config/embeddings.ts';
 import { conversationMessages, fitConversation } from './conversation-context.ts';
 
 export function parseLocalQuery(text: string): SearchPlan {
@@ -28,6 +28,6 @@ export function buildLocalQueryContext(
 ) {
   return fitConversation(previous, profile, (history) => ({
     messages: conversationMessages(LOCAL_QUERY_PROMPT, question, history),
-    generation: QUERY_GENERATION,
+    generation: history.length ? QUERY_GENERATION : QUERY_WITHOUT_HISTORY,
   }));
 }

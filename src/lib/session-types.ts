@@ -9,7 +9,6 @@ import type {
   ModelMessage,
   Generation,
   SearchPlan,
-  RecordSelection,
   GenomeProvenance,
 } from './types.ts';
 import type { compactMatch } from './match-reference.ts';
@@ -65,11 +64,9 @@ export interface StepData extends Partial<AnswerContext> {
   previewLimit?: number;
   messages?: ModelMessage[];
   raw?: string;
-  selection?: RecordSelection;
   rendered?: string;
   finishReason?: ModelChunk['choices'][number]['finish_reason'];
   usage?: ModelChunk['usage'];
-  opening?: StepData;
 }
 export interface JourneyStep {
   id: StepId;
@@ -101,7 +98,6 @@ export interface ChatMessage {
   context?: AnswerContext;
   stage?: string;
   general?: boolean;
-  answerSelection?: RecordSelection;
   evidenceAnswer?: boolean;
   limited?: boolean;
   finishReason?: ModelChunk['choices'][number]['finish_reason'];

@@ -14,7 +14,8 @@ const number = (value: number | null | undefined) => (value == null ? '—' : va
 const PLAN_DESCRIPTIONS = {
   search: 'Find matches for a topic, gene or variant.',
   overview: 'Review the full match list and choose a small selection.',
-  other: 'Use the conversation to explain general information or ask for clarification.',
+  other: 'Answer a new general question without earlier conversation or genome records.',
+  followup: 'Continue the earlier conversation without a new search or added source records.',
 };
 
 // Layout uses the reference's fixed field labels; source wording is unchanged.
@@ -87,7 +88,7 @@ function RecordReference({ record }: { record: ReferenceRecord }) {
           {record.gene && !!identifiers.length && <SourceLinks sources={identifiers} />}
         </div>
         <span className="input-record-origin">
-          {record.origin === 'earlier' ? 'Earlier answer' : 'This search'}
+          {record.origin === 'earlier' ? 'Earlier input' : 'This search'}
         </span>
       </header>
       <p className="input-record-location">{record.variant}</p>
@@ -124,18 +125,13 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
   const preparationFailure = [steps.catalog, steps.matching, steps.index].find((step) =>
     ['error', 'stopped'].includes(step.status),
   );
-  const chosenRecords = message.answerSelection
-    ? (reference?.records.filter((record) =>
-        message.answerSelection!.selected.includes(record.id),
-      ) ?? [])
-    : [];
   const history = messages.slice(1, -1);
 
   const questionDetail = (
     <>
       <p className="step-description">
         {message.model.shortLabel} reads your question and recent conversation, then chooses one of
-        the three approaches below. Your latest question takes priority; earlier exchanges help it
+        the four approaches below. Your latest question takes priority; earlier exchanges help it
         understand follow-ups. For a specific topic, it also writes the search text. This happens on
         your device.
       </p>
@@ -145,7 +141,7 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
           <strong>Search for:</strong> {plan.query}
         </p>
       )}
-      <h3>The three possible approaches</h3>
+      <h3>The four possible approaches</h3>
       <ul className="step-categories">
         {Object.entries(PLAN_DESCRIPTIONS).map(([mode, description]) => (
           <li key={mode} className={plan?.mode === mode ? 'is-selected' : ''}>
@@ -163,9 +159,11 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
   const inputDetail = (
     <>
       <p className="step-description">
-        {message.general
-          ? 'The local model receives your question, shared instructions and recent conversation. No new variant search is needed for this approach. Earlier exchanges are included as space allows, so it can respond to follow-ups.'
-          : 'The app puts your question, shared instructions and a small set of matched records together for the local model. Relevant records from earlier answers and recent conversation can also be included, within the model’s available space. The complete genome and search vectors are not part of this input.'}
+        {plan?.mode === 'followup'
+          ? 'The local model receives your question and the previous conversation, keeping the newest complete exchanges that fit. No search or source records are added. Details omitted from earlier answers are not available in this input.'
+          : message.general
+            ? 'The local model receives your new question and shared instructions, without earlier conversation or genome records.'
+            : 'The local model receives your question, instructions and up to three candidate records, without earlier conversation. It is asked to discuss at most three relevant records, and fewer when appropriate. The complete genome and search vectors are not part of this input.'}
       </p>
       <RequestDiagram message={message} selected={2} />
       {context ? (
@@ -206,18 +204,13 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
   const answerDetail = (
     <>
       <p className="step-description">
-        {message.general
-          ? 'The local model responds to your question using the conversation. It can explain general genetics from its own knowledge or ask for clarification when needed. This approach does not add new findings from your genome.'
-          : 'The local model chooses relevant records from its input and writes a short answer based on them. The app adds the selected records’ exact genotype, classification, review information, frequencies and source links. You can see which records were chosen below and read the answer in the chat.'}
+        {plan?.mode === 'followup'
+          ? 'The local model continues the conversation using earlier questions and answers. It has no new source records to verify or expand those findings.'
+          : message.general
+            ? 'The local model answers the new general question from its knowledge or asks for clarification. It has no genome records or earlier conversation in this input.'
+            : 'The local model reads the candidates and answers using the records it considers relevant. The chat shows its generated answer. You can inspect every supplied record and its original source links in Model input; supplied records are not necessarily used in the answer.'}
       </p>
       <RequestDiagram message={message} selected={3} />
-      {!!chosenRecords.length && <h3>Records used in the answer</h3>}
-      {chosenRecords.map((record) => (
-        <RecordReference key={record.id} record={record} />
-      ))}
-      {message.answerSelection && !chosenRecords.length && (
-        <p>The model did not select a variant record for this answer.</p>
-      )}
       {message.limited && <p>The answer reached its length limit and may be incomplete.</p>}
       {['complete', 'running'].includes(steps.answer.status) && (
         <p className="step-footnote">
