@@ -54,3 +54,14 @@ test('streamed incomplete Markdown stays parser-managed without string repair', 
     assert.doesNotThrow(() => render(content.slice(0, end)));
   assert.match(render(content), /<table>/);
 });
+
+test('touching source links get a readable separator only in the rendered answer', () => {
+  const a = '[First](https://example.com/a)';
+  const b = '[Second](https://example.com/b)';
+  const c = '[Third](https://example.com/c)';
+  assert.match(render(`- ${a}${b}${c}`), /First<\/a> · <a [^>]+>Second<\/a> · <a [^>]+>Third/);
+  for (const separator of [', ', ' and ', ' · ', ' ']) {
+    assert.ok(render(`${a}${separator}${b}`).includes(`First</a>${separator}<a `));
+  }
+  assert.ok(render('`' + a + b + '`').includes('<code>' + a + b + '</code>'));
+});

@@ -52,9 +52,9 @@ test('Qwen3.5 retains required runtime overrides and uses supported non-thinking
   const request = localModelRequest(profile, [{ role: 'user', content: 'Synthetic question' }]);
   assert.equal(profile.nativeContextWindowTokens, 262144);
   assert.equal(request.max_tokens, 32768);
-  assert.equal(request.temperature, 0);
-  assert.equal(request.top_p, 1);
-  assert.equal(request.seed, 42);
+  assert.equal(request.temperature, 0.7);
+  assert.equal(request.top_p, 0.8);
+  assert.equal(Object.hasOwn(request, 'seed'), false);
   assert.equal(request.presence_penalty, 1.5);
   assert.equal(request.repetition_penalty, 1);
   assert.deepEqual(request.extra_body, { enable_thinking: false });
@@ -70,14 +70,14 @@ test('generation options are independent: Llama never inherits Qwen thinking or 
     const llama = localModelRequest(getModelProfile(id), messages);
     assert.equal(llama.extra_body, undefined);
     assert.equal(llama.presence_penalty, undefined);
-    assert.equal(llama.temperature, 0);
-    assert.equal(llama.top_p, 1);
-    assert.equal(llama.seed, 42);
+    assert.equal(llama.temperature, 0.6);
+    assert.equal(llama.top_p, 0.9);
+    assert.equal(Object.hasOwn(llama, 'seed'), false);
     assert.equal(llama.max_tokens, 131072);
   }
 });
 
-test('DeepSeek profiles use shared sampling without unsupported Qwen thinking controls', () => {
+test('DeepSeek profiles use their sampling defaults without unsupported Qwen thinking controls', () => {
   for (const id of ['deepseek-r1-qwen-7b', 'deepseek-r1-llama-8b']) {
     const messages: ModelMessage[] = [
       { role: 'system', content: 'Shared instructions' },
@@ -85,9 +85,9 @@ test('DeepSeek profiles use shared sampling without unsupported Qwen thinking co
     ];
     const request = localModelRequest(getModelProfile(id), messages);
     assert.deepEqual(request.messages, messages);
-    assert.equal(request.temperature, 0);
-    assert.equal(request.top_p, 1);
-    assert.equal(request.seed, 42);
+    assert.equal(request.temperature, 0.6);
+    assert.equal(request.top_p, 0.95);
+    assert.equal(Object.hasOwn(request, 'seed'), false);
     assert.equal(request.max_tokens, 131072);
     assert.equal(request.extra_body, undefined);
     assert.equal(request.presence_penalty, undefined);

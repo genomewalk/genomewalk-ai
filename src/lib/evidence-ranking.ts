@@ -1,5 +1,9 @@
-import type { SemanticHit } from './types.ts';
-import { CATALOG_CLASS_PRIORITY, UNKNOWN_CLASS_PRIORITY } from '../config/evidence-ranking.ts';
+import type { MatchedRow, SemanticHit } from './types.ts';
+import {
+  CATALOG_CLASS_LABELS,
+  DISEASE_CLASS_ORDER,
+  REVIEW_GROUPS,
+} from '../config/evidence-ranking.ts';
 
 interface RankingFields {
   sig?: unknown;
@@ -7,14 +11,13 @@ interface RankingFields {
   rowNumber?: number;
 }
 export function catalogPriority<T extends RankingFields>(row: T) {
-  const category =
-    typeof row.sig === 'string' && Object.hasOwn(CATALOG_CLASS_PRIORITY, row.sig)
-      ? CATALOG_CLASS_PRIORITY[row.sig as keyof typeof CATALOG_CLASS_PRIORITY]
-      : UNKNOWN_CLASS_PRIORITY;
+  const classification =
+    typeof row.sig === 'string' && Object.hasOwn(CATALOG_CLASS_LABELS, row.sig)
+      ? CATALOG_CLASS_LABELS[row.sig as keyof typeof CATALOG_CLASS_LABELS]
+      : 'Unknown or missing classification code';
   return {
     sig: row.sig ?? null,
-    classification: category.label,
-    classificationOrder: category.order,
+    classification,
     reviewStars:
       typeof row.stars === 'number' &&
       Number.isInteger(row.stars) &&
@@ -25,21 +28,7 @@ export function catalogPriority<T extends RankingFields>(row: T) {
   };
 }
 
-// Broad questions have no topic similarity; use catalog fields across the full pool.
-export function rankCatalogOverview<T extends RankingFields>(records: T[]) {
-  return records
-    .map((row, index) => ({ index, priority: catalogPriority(row) }))
-    .sort(
-      (a, b) =>
-        a.priority.classificationOrder - b.priority.classificationOrder ||
-        (b.priority.reviewStars ?? -1) - (a.priority.reviewStars ?? -1) ||
-        (records[a.index]!.rowNumber ?? a.index) - (records[b.index]!.rowNumber ?? b.index) ||
-        a.index - b.index,
-    )
-    .map((hit, index) => ({ ...hit, rank: index + 1 }));
-}
-
-// Topic relevance is cosine similarity only. Catalog order breaks exact ties.
+// Topic relevance is ColBERT MaxSim only. Catalog order breaks exact ties.
 export function rankSemantic<T extends RankingFields>(hits: SemanticHit[], records: T[]) {
   if (hits.length !== records.length)
     throw new Error('Semantic ranking requires scores for every usable match.');
@@ -69,6 +58,31 @@ export function rankSemantic<T extends RankingFields>(hits: SemanticHit[], recor
         b.score - a.score ||
         (records[a.index]!.rowNumber ?? a.index) - (records[b.index]!.rowNumber ?? b.index) ||
         a.index - b.index,
+    )
+    .map((hit, index) => ({ ...hit, rank: index + 1 }));
+}
+
+function reviewPriority(row: MatchedRow) {
+  const disease = DISEASE_CLASS_ORDER.indexOf(row.sig ?? '');
+  const priority = catalogPriority(row);
+  const stars = priority.reviewStars;
+  const group = disease < 0 ? 2 : (stars ?? 0) >= 2 ? 0 : 1;
+  return { group, priority, disease };
+}
+
+export function catalogReviewGroup(row: MatchedRow) {
+  return REVIEW_GROUPS[reviewPriority(row).group]!;
+}
+
+// Stable ties retain match order, as in Genomewalk. The summary and overview use this same order.
+export function rankCatalogForReview(matches: readonly MatchedRow[]) {
+  return matches
+    .map((row, index) => ({ index, ...reviewPriority(row) }))
+    .sort(
+      (a, b) =>
+        a.group - b.group ||
+        (b.priority.reviewStars ?? 0) - (a.priority.reviewStars ?? 0) ||
+        a.disease - b.disease,
     )
     .map((hit, index) => ({ ...hit, rank: index + 1 }));
 }

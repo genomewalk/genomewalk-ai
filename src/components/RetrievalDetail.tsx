@@ -1,45 +1,34 @@
 import type { ChatMessage, JourneyStep } from '../lib/session-types.ts';
 import { Disclosure } from './StepDetails.tsx';
 import { RequestDiagram } from './RequestDiagram.tsx';
-import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
+import { recordLimit } from '../config/evidence-answer.ts';
 
 export function RetrievalDetail({ message, step }: { message: ChatMessage; step: JourneyStep }) {
   const data = step.data;
   const context = message.context;
+  const plan = message.journey?.steps.find((item) => item.id === 'query')?.data?.response;
   const considered = new Map(
     context?.consideredRows?.map((row) => [row.citation, row.status]) ?? [],
   );
-  const limit = context?.maxNewRecords ?? MAX_CANDIDATES;
-  if (step.status === 'skipped')
-    return (
-      <>
-        <p className="step-description">
-          This question goes directly to the local model. Follow-up uses previous conversation;
-          General uses only the new question. No genome records are searched or added.
-        </p>
-        <RequestDiagram message={message} selected={1} />
-      </>
-    );
+  const limit = context?.maxNewRecords ?? recordLimit(plan);
   return (
     <>
       <p className="step-description">
-        {(data?.mode ??
-          message.journey?.steps.find((item) => item.id === 'query')?.data?.response?.mode) ===
-        'overview'
-          ? 'For an overview, the app considers the whole pool of usable genome matches and orders it by ClinVar classification, then review stars. No topic search is needed.'
-          : 'The local embedding model compares the meaning of the search text with your indexed matches. Records are ordered by that similarity. Classification and review information remain available in each record.'}{' '}
+        {plan?.overview
+          ? 'The overview uses the same review priority as the catalog summary.'
+          : 'The local embedding model orders matched variants by similarity to the search query.'}{' '}
         Up to {limit} new records are prepared for the answer, as space allows. This order helps
         choose records to review; it does not measure personal risk.
       </p>
       <RequestDiagram message={message} selected={1} />
       {data?.rows && (
         <>
-          {data.mode === 'search' && (
+          {data.query && (
             <p>
               <strong>Searching for:</strong> {data.query}
             </p>
           )}
-          <h3>Matches in review order</h3>
+          <h3>{plan?.overview ? 'Matches in catalog review order' : 'Matches in search order'}</h3>
           <p>
             Showing the first {data.rows.length} of {data.total?.toLocaleString()} matches. Expand a
             gene to inspect its record.
@@ -60,7 +49,7 @@ export function RetrievalDetail({ message, step }: { message: ChatMessage; step:
                 <tr>
                   <th scope="col">Order</th>
                   <th scope="col">Matched variant</th>
-                  <th scope="col">From this search</th>
+                  <th scope="col">Model input</th>
                 </tr>
               </thead>
               <tbody>

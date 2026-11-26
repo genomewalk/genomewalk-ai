@@ -10,6 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { getModelProfile, LOCAL_MODELS } from '../src/config/models/index.ts';
+import { QUERY_GENERATION } from '../src/config/embeddings.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -332,26 +333,26 @@ test('inference streams unmodified chunks and resets KV state between explicit r
   assert.equal('history' in f.session, false, 'Conversation history belongs to EmbeddingsSession');
 });
 
-test('all inference stages share sampling while retaining their own limits and grammar', async () => {
+test('fixed routing settings do not carry into subsequent answer requests', async () => {
   const f = fixture();
   await f.session.initialize();
-  const response_format = { type: 'json_object' as const, schema: '{"type":"object"}' };
-  for (const generation of [
-    {},
-    { temperature: 0.2, top_p: 0.8, seed: 99, max_tokens: 512 },
-    { response_format, extra_body: {}, max_tokens: 256 },
-  ]) {
+  const profile = f.session.state.model!;
+  for (const generation of [QUERY_GENERATION, { max_tokens: 2048 }]) {
     await collect(
       f.session.completePrivate([{ role: 'user', content: 'Question' }], { generation }),
     );
     const request = f.requests.at(-1)!;
-    assert.equal(request.temperature, 0);
-    assert.equal(request.top_p, 1);
-    assert.equal(request.seed, 42);
-    assert.equal(request.max_tokens, generation.max_tokens ?? 131072);
+    assert.equal(request.max_tokens, generation.max_tokens);
     assert.deepEqual(request.response_format, generation.response_format);
   }
-  assert.equal(f.calls.reset, 6);
+  const [routing, answering] = f.requests;
+  assert.equal(routing!.temperature, 0);
+  assert.equal(routing!.top_p, 1);
+  assert.equal(routing!.seed, 42);
+  assert.equal(answering!.temperature, profile.generation.temperature);
+  assert.equal(answering!.top_p, profile.generation.top_p);
+  assert.equal(Object.hasOwn(answering!, 'seed'), false);
+  assert.equal(f.calls.reset, 4);
   f.session.dispose();
 });
 

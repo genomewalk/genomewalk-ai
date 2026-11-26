@@ -1,12 +1,10 @@
-import type { MatchResult, GenomeSource, SearchPlan } from '../src/lib/types.ts';
+import type { MatchResult, SearchPlan } from '../src/lib/types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scanVcf } from '../src/lib/vcf-matcher.ts';
 import { hydrateGenomewalkMatches } from '../src/lib/local-catalog.ts';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
-import { buildGeneralContext } from '../src/lib/general-context.ts';
 import { buildAnswerReference } from '../src/lib/evidence-answer.ts';
-import { EXAMPLE_GENOME } from '../src/config/example-genome.ts';
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
 
 const fields = [
@@ -87,31 +85,31 @@ async function matched(lines: string) {
   });
   return hydrateGenomewalkMatches(result, catalogue);
 }
-const plan: SearchPlan = { mode: 'search', query: 'cancer-related variants' };
-test('follow-up includes public-example provenance but no source records or file identity', () => {
+const plan: SearchPlan = { query: 'cancer-related variants' };
+test('answer receives complete conversation without genome-source metadata', () => {
   const previous = [{ question: 'Earlier question', answer: 'Earlier answer' }];
-  const c = buildGeneralContext('Explain it', previous, LOCAL_MODELS[0]!, {
-    followup: true,
-    genomeSource: EXAMPLE_GENOME,
-  });
-  const payload = JSON.parse(c.messages.at(-1)!.content);
-  assert.deepEqual(payload.genomeSource, { kind: 'example', label: EXAMPLE_GENOME.label });
-  assert.equal(payload.reference, undefined);
+  const c = buildEmbeddingsContext(
+    'Explain it',
+    [],
+    { build: 'GRCh38', matches: [], issues: [] },
+    LOCAL_MODELS[0]!,
+    plan,
+    { history: previous },
+  );
+  assert.deepEqual(c.messages.slice(1, -1), [
+    { role: 'user', content: 'Earlier question' },
+    { role: 'assistant', content: 'Earlier answer' },
+  ]);
   assert.equal(c.historyTurns, 1);
-  assert.ok(!JSON.stringify(c.messages).includes(EXAMPLE_GENOME.sha256));
-  assert.ok(!JSON.stringify(c.messages).includes(EXAMPLE_GENOME.name));
+  assert.doesNotMatch(JSON.stringify(c.messages), /genomeSource/);
 });
-const contextFor = (
-  result: MatchResult,
-  genomeSource: Pick<GenomeSource, 'kind' | 'label'> & Partial<GenomeSource>,
-) =>
+const contextFor = (result: MatchResult) =>
   buildEmbeddingsContext(
     'Cancer-related variants?',
     result.matches,
     result,
     LOCAL_MODELS[0]!,
     plan,
-    { genomeSource: { available: true, name: 'Synthetic fixture', bytes: 1, ...genomeSource } },
   );
 
 test('same-position FH alleles stay distinct through matching, annotation hydration, context and rendered links; absent NOP10 stays absent', async () => {
@@ -119,14 +117,8 @@ test('same-position FH alleles stay distinct through matching, annotation hydrat
   assert.equal(result.matches.length, 1);
   assert.equal(result.matches[0]!.variationid, '296866');
   assert.deepEqual(result.matches[0]!.call.alleles, ['T', 'TGAGA']);
-  const context = contextFor(result, {
-    kind: 'upload',
-    name: 'PRIVATE_FILENAME',
-    label: 'PRIVATE_FILENAME',
-    sha256: 'PRIVATE_DIGEST',
-  });
+  const context = contextFor(result);
   const request = JSON.stringify(context.messages);
-  assert.ok(!request.includes('PRIVATE_'));
   assert.ok(!request.includes('TGAGAGA'));
   assert.ok(!request.includes('NOP10'));
   const rendered = JSON.stringify(buildAnswerReference(context.recordReference));
@@ -139,7 +131,7 @@ test('same-position FH alleles stay distinct through matching, annotation hydrat
   );
 });
 
-test('public HG002 calls are labeled as example evidence throughout the answer request', async () => {
+test('answer requests preserve synthetic genotype facts without genome-source metadata across models', async () => {
   const result = await matched(
     vcf('chr1', 241500602, 'T', 'TGAGAGA', '1/1') + vcf('chr15', 34342117, 'G', 'A', '0/1'),
   );
@@ -158,19 +150,10 @@ test('public HG002 calls are labeled as example evidence throughout the answer r
       result,
       profile,
       plan,
-      { genomeSource: EXAMPLE_GENOME },
     );
-    assert.deepEqual(JSON.parse(context.messages[1]!.content).reference.genomeSource, {
-      kind: 'example',
-      label: EXAMPLE_GENOME.label,
-    });
-    assert.ok(!JSON.stringify(context.messages).includes(EXAMPLE_GENOME.sha256));
-    assert.ok(!JSON.stringify(context.messages).includes(EXAMPLE_GENOME.name));
+    assert.doesNotMatch(JSON.stringify(context.messages), /genomeSource/);
     const rendered = JSON.stringify(buildAnswerReference(context.recordReference));
-    assert.deepEqual(buildAnswerReference(context.recordReference).genomeSource, {
-      kind: 'example',
-      label: EXAMPLE_GENOME.label,
-    });
+    assert.doesNotMatch(rendered, /genomeSource/);
     assert.match(rendered, /selected file contains TGAGAGA and TGAGAGA/);
     assert.match(rendered, /selected file contains G and A/);
     assert.doesNotMatch(rendered, /your file|Your file/);

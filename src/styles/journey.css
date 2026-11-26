@@ -116,8 +116,7 @@
   color: #8a9284;
 }
 .progress-trail .is-error .progress-circle,
-.progress-trail .is-stopped .progress-circle,
-.progress-trail .is-limited .progress-circle {
+.progress-trail .is-stopped .progress-circle {
   border-color: #c88a69;
   background: #f8e9de;
   color: #994b2c;
@@ -304,8 +303,7 @@
   background: #638453;
 }
 .step-panel-status.is-error > span,
-.step-panel-status.is-stopped > span,
-.step-panel-status.is-limited > span {
+.step-panel-status.is-stopped > span {
   background: var(--accent);
 }
 .step-panel-detail {

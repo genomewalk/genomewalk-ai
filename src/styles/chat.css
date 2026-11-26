@@ -554,22 +554,37 @@ details pre {
   margin: 0 0 12px;
 }
 .assistant-markdown h1,
-.assistant-markdown h2 {
-  font-size: 17px;
-  line-height: 1.4;
-  font-weight: 650;
-  margin: 22px 0 10px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid var(--line);
-}
+.assistant-markdown h2,
 .assistant-markdown h3,
 .assistant-markdown h4,
 .assistant-markdown h5,
 .assistant-markdown h6 {
-  font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.4;
   font-weight: 650;
-  margin: 18px 0 8px;
+  margin: 24px 0 10px;
+  overflow-wrap: anywhere;
+}
+.assistant-markdown h1 {
+  font-size: 19px;
+}
+.assistant-markdown h2 {
+  font-size: 18px;
+}
+.assistant-markdown h3 {
+  font-size: 17px;
+}
+.assistant-markdown h4 {
+  font-size: 16px;
+}
+.assistant-markdown h5,
+.assistant-markdown h6 {
+  font-size: 14px;
+}
+.assistant-markdown
+  > :is(p, ul, ol, blockquote, pre, .markdown-table)
+  + :is(h1, h2, h3, h4, h5, h6) {
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
 }
 .assistant-markdown strong {
   font-weight: 650;
@@ -588,11 +603,16 @@ details pre {
 .assistant-markdown li ul,
 .assistant-markdown li ol {
   margin-block: 6px;
+  padding-left: 20px;
+}
+.assistant-markdown li li + li {
+  margin-top: 4px;
 }
 .assistant-markdown a {
   color: var(--accent);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
 }
 .assistant-markdown hr {
   margin: 20px 0;
@@ -669,14 +689,6 @@ details pre {
   font-size: 15px;
   line-height: 1.8;
 }
-.evidence-answer .assistant-markdown h3 {
-  margin-top: 24px;
-  font-size: 18px;
-}
-.evidence-answer .assistant-markdown h3 ~ h3 {
-  padding-top: 22px;
-  border-top: 1px solid var(--line);
-}
 @media (max-width: 600px) {
   .message-bubble.evidence-answer {
     padding: 18px;
@@ -710,16 +722,6 @@ details pre {
   color: #8a6f59;
   padding: 8px 4px 0;
   line-height: 1.5;
-}
-.stream-cursor {
-  display: inline-block;
-  width: 5px;
-  height: 14px;
-  border-radius: 2px;
-  background: #809372;
-  margin-left: 4px;
-  vertical-align: -2px;
-  animation: pulse 0.7s infinite alternate;
 }
 .conversation-status {
   width: min(100%, 820px);
@@ -1093,4 +1095,9 @@ details pre {
   .sidebar .model-selector p {
     margin-top: 6px;
   }
+}
+
+.catalog-summary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

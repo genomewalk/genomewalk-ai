@@ -1,3 +1,4 @@
+import { buildCatalogSummary } from '../src/lib/catalog-summary.ts';
 import type { Fetcher } from '../src/vendor/genomewalk/io/types.ts';
 import type { GenomeSource } from '../src/lib/types.ts';
 import type { GenomeConfig, MatchResult, SearchPlan, ModelRequest } from '../src/lib/types.ts';
@@ -12,9 +13,8 @@ import { bgzfBytes } from './helpers/bgzf.ts';
 import { identifyGenome } from '../src/lib/genome-source.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
-import { searchDocument, cosineSimilarity } from '../src/lib/semantic-search.ts';
+import { searchDocument } from '../src/lib/semantic-search.ts';
 import { loadCatalogKeys, hydrateGenomewalkMatches } from '../src/lib/local-catalog.ts';
-import { buildGeneralContext } from '../src/lib/general-context.ts';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
 import { LOCAL_MODELS, getModelProfile } from '../src/config/models/index.ts';
 import { scanVcf } from '../src/lib/vcf-matcher.ts';
@@ -68,7 +68,7 @@ const result: MatchResult = {
   stats: { records: rows.length, matched: rows.length, needsReview: 0 },
   limitations: 'Synthetic fixture',
 };
-const plan: SearchPlan = { mode: 'search', query: 'hearing loss' };
+const plan: SearchPlan = { query: 'hearing loss' };
 const columns = [
   'chrom',
   'pos',
@@ -117,11 +117,6 @@ const publicFetch: Fetcher = async (url) => {
 };
 
 test('semantic documents exclude allele calls and exclude frequencies, classification and review from relevance', () => {
-  assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
-  assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
-  assert.ok(cosineSimilarity([1, 0], [0.8, 0.2]) > 0.9);
-  assert.throws(() => cosineSimilarity([1], [1, 2]), /dimensions/);
-  assert.throws(() => cosineSimilarity([0, 0], [1, 0]), /Invalid/);
   assert.ok(!searchDocument(rows[0]!).includes('0/1'));
   assert.match(searchDocument(rows[0]!), /Inherited hearing loss/);
   assert.equal(
@@ -188,7 +183,7 @@ test('readable input preserves actual evidence and every source link without int
       profile,
       plan,
     );
-    assert.equal(context.included, 3);
+    assert.equal(context.included, 5);
     assert.equal(context.evidence.matches[0]!.gene, 'SYNTHETIC5');
     assert.ok(context.inputBytes <= context.inputByteLimit);
     assert.ok(!JSON.stringify(context.messages).includes('SENTINEL'));
@@ -246,16 +241,31 @@ test('separate source lists never become invented condition-specific classificat
   assert.equal(Object.hasOwn(reference, 'conflictingClassifications'), false);
 });
 
-test('three-candidate limit preserves rank and permits a smaller shortlist', () => {
+test('topic and overview limits preserve rank and allow a smaller shortlist', () => {
   const profile = getModelProfile('qwen3.5-9b');
-  const three = buildEmbeddingsContext('Compare', rows, result, profile, plan);
+  const topic = buildEmbeddingsContext('Compare', rows, result, profile, plan);
+  const overview = buildEmbeddingsContext('Overview', rows, result, profile, { overview: true });
   const two = buildEmbeddingsContext('Compare', rows, result, profile, plan, { maxNewRecords: 2 });
-  assert.equal(three.maxNewRecords, 3);
-  assert.equal(three.included, 3);
+  assert.equal(topic.maxNewRecords, 5);
+  assert.equal(topic.included, 5);
+  assert.equal(overview.maxNewRecords, 3);
+  assert.equal(overview.included, 3);
   assert.equal(two.included, 2);
-  assert.deepEqual(three.evidence.matches.slice(0, 2), two.evidence.matches);
-  assert.equal(three.omitted, rows.length - 3);
-  for (const maxNewRecords of [0, 4, 10, 2.5, '2']) {
+  assert.deepEqual(topic.evidence.matches.slice(0, 2), two.evidence.matches);
+  assert.equal(topic.omitted, rows.length - 5);
+  assert.throws(
+    () =>
+      buildEmbeddingsContext(
+        'Overview',
+        rows,
+        result,
+        profile,
+        { overview: true },
+        { maxNewRecords: 4 },
+      ),
+    /New-record limit/,
+  );
+  for (const maxNewRecords of [0, 6, 10, 2.5, '2']) {
     assert.throws(
       // @ts-expect-error Invalid limits from untyped input.
       () => buildEmbeddingsContext('Compare', rows, result, profile, plan, { maxNewRecords }),
@@ -310,7 +320,7 @@ test('field descriptions keep calls, classification conflicts and unknown review
   assert.equal(compactMatch({ ...row, stars: 0 }).review, '0 stars: criteria provided.');
 });
 
-test('context budgeting drops whole records; conversation-only context drops whole turns', () => {
+test('context reserves room for whole records before fitting complete conversation turns', () => {
   const profile = getModelProfile('qwen3-4b');
   const huge = { ...rows[0]!, conditions: 'Condition '.repeat(5000) };
   const context = buildEmbeddingsContext(
@@ -330,17 +340,17 @@ test('context budgeting drops whole records; conversation-only context drops who
   const previous = [
     { question: 'Verified earlier question', answer: 'UNVERIFIED_ANSWER', records: [] },
   ];
-  const followup = buildGeneralContext('Which one?', previous, profile, { followup: true });
+  const followup = buildEmbeddingsContext('Which one?', rows, result, profile, plan, {
+    history: previous,
+  });
   assert.equal(followup.historyTurns, 1);
   assert.equal(followup.inputByteLimit, profile.contextWindowTokens - 4096 - 768);
   assert.equal(followup.messages[1]!.content, 'Verified earlier question');
   assert.ok(JSON.stringify(followup.messages).includes('UNVERIFIED_ANSWER'));
-  const hugeHistory = buildGeneralContext(
-    'Which?',
-    [{ question: 'x'.repeat(50000), answer: 'Old answer' }],
-    profile,
-    { followup: true },
-  );
+  const hugeHistory = buildEmbeddingsContext('Which?', rows, result, profile, plan, {
+    history: [{ question: 'x'.repeat(50000), answer: 'Old answer' }],
+  });
+  assert.equal(hugeHistory.included, 5);
   assert.equal(hugeHistory.historyTurns, 0);
   assert.equal(hugeHistory.omittedHistoryTurns, 1);
 });
@@ -349,7 +359,7 @@ test('local query parsing is schema validation, never heuristic repairs or keywo
   assert.deepEqual(parseLocalQuery(JSON.stringify(plan)), plan);
   assert.throws(() => parseLocalQuery('```json\n' + JSON.stringify(plan) + '\n```'));
   assert.throws(() => parseLocalQuery(JSON.stringify({ ...plan, cloud: true })), /invalid/);
-  assert.throws(() => parseLocalQuery(JSON.stringify({ ...plan, query: '' })), /invalid/);
+  assert.deepEqual(parseLocalQuery('{"overview":true}'), { overview: true });
 });
 
 test('fresh search preserves supplied source facts without prior conversation', () => {
@@ -367,12 +377,12 @@ test('fresh search preserves supplied source facts without prior conversation', 
   }
 });
 
-test('overview uses only the fresh full-pool ordering and no conversation', () => {
+test('a broad answer includes full-pool totals even when retrieved candidates are a subset', () => {
   for (const profile of LOCAL_MODELS) {
     const c = buildEmbeddingsContext('Review', rows.slice(2), result, profile, {
-      mode: 'overview',
-      query: '',
+      query: 'SYNTHETIC3',
     });
+    assert.ok(c.messages.at(-1)!.content.includes(buildCatalogSummary(result.matches)));
     assert.equal(c.messages.length, 2);
     assert.equal(c.historyTurns, 0);
     assert.deepEqual(
@@ -446,13 +456,13 @@ test('catalog hydration preserves missing or invalid review stars as unknown, in
   );
 });
 
-test('local mode uses real matching, isolated history and compact requests; no cloud endpoint is reachable', async () => {
+test('local mode uses real matching, complete history and compact requests; no cloud endpoint is reachable', async () => {
   const requests: ModelRequest[] = [];
   const urls: Parameters<Fetcher>[0][] = [];
   const operations: string[] = [];
   let scans = 0;
   let malformed = false;
-  let mode = 'search';
+  let query = plan.query;
   const engine = fakeEngine({
     dispose() {},
     async reset() {},
@@ -460,13 +470,9 @@ test('local mode uses real matching, isolated history and compact requests; no c
       requests.push(structuredClone(request));
       const content = !request.response_format
         ? 'These records contain the requested annotations.'
-        : JSON.parse(request.response_format.schema!).anyOf?.some(
-              (branch: { properties?: { mode?: unknown } }) => branch.properties?.mode,
-            )
-          ? malformed
-            ? 'invalid JSON'
-            : JSON.stringify({ ...plan, mode, query: mode === 'search' ? plan.query : '' })
-          : JSON.stringify({ selected: ['v1'] });
+        : malformed
+          ? 'invalid JSON'
+          : JSON.stringify({ query });
       yield { choices: [{ delta: { content }, finish_reason: 'stop' }] };
       yield {
         choices: [],
@@ -537,7 +543,7 @@ test('local mode uses real matching, isolated history and compact requests; no c
   const first = session.state.messages.at(-1)!;
   assert.equal(first!.status, 'complete');
   assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC1');
-  assert.equal(first!.context!.included, 3);
+  assert.equal(first!.context!.included, 5);
   assert.equal(first!.finishReason, 'stop');
   assert.equal(first!.question, 'Hearing?');
   assert.deepEqual(
@@ -575,20 +581,15 @@ test('local mode uses real matching, isolated history and compact requests; no c
     {
       sig: 'C',
       classification: 'Conflicting classifications',
-      classificationOrder: 2,
       reviewStars: 1,
     },
-  );
-  assert.ok(
-    !JSON.stringify(requests).includes('classificationOrder'),
-    'Sorting metadata stays in the journey, outside LLM context',
   );
   assert.equal(first!.journey!.steps.find((s) => s.id === 'context')!.data!.submitted, true);
   assert.ok(!JSON.stringify(requests).includes('SENTINEL'));
   await session.send('Which of those?');
   assert.equal(session.state.error, null);
   assert.equal(scans, 1);
-  assert.equal(session.state.messages.at(-1)!.context!.historyTurns, 0);
+  assert.equal(session.state.messages.at(-1)!.context!.historyTurns, 1);
   assert.deepEqual(
     operations,
     ['index', 'score', 'score'],
@@ -615,18 +616,18 @@ test('local mode uses real matching, isolated history and compact requests; no c
   assert.equal(session.state.messages.at(-1)!.status, 'complete');
   assert.equal(scans, 1);
   const operationCount = operations.length;
-  mode = 'overview';
+  query = 'SYNTHETIC1';
   await session.send('Overview');
   assert.equal(session.state.error, null);
   assert.equal(scans, 1);
-  assert.equal(operations.length, operationCount);
+  assert.equal(operations.length, operationCount + 1);
   assert.equal(
-    session.state.messages.at(-1)!.journey!.steps.find((s) => s.id === 'semantic')!.data!.mode,
-    'overview',
+    session.state.messages.at(-1)!.journey!.steps.find((s) => s.id === 'semantic')!.data!.query,
+    query,
   );
   assert.deepEqual(
     session.state.messages.at(-1)!.context!.evidence!.matches.map((r) => r.gene),
-    rows.slice(0, 3).map((r) => r.gene),
+    rows.slice(0, 5).map((r) => r.gene),
   );
   session.forget();
   assert.equal(session.state.indexReady, false);

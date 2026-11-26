@@ -147,9 +147,8 @@ export function EmbeddingsChat() {
                   <em>Search them privately.</em>
                 </h2>
                 <p className="welcome-copy">
-                  Ask a general genetics question, or search your matched records. General
-                  explanations use local model knowledge; answers about your variants show selected
-                  source facts with links.
+                  Ask about your matched records or continue the conversation. Answers use relevant
+                  source facts with links and local model knowledge for general explanations.
                 </p>
                 <div className="starter-grid">
                   {[

@@ -1,8 +1,24 @@
+import type { Element, Root } from 'hast';
 import type { ToggleEvent } from 'react';
 import type { Components } from 'react-markdown';
 import { createElement, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+// Separate links that touch in the rendered tree. Authored punctuation, code and raw Markdown stay intact.
+function separateTouchingLinks() {
+  return function visit(parent: Root | Element) {
+    for (let index = parent.children.length - 1; index >= 0; index--) {
+      const child = parent.children[index]!;
+      if (child.type !== 'element') continue;
+      const previous = parent.children[index - 1];
+      if (child.tagName === 'a' && previous?.type === 'element' && previous.tagName === 'a') {
+        parent.children.splice(index, 0, { type: 'text', value: ' · ' });
+      }
+      visit(child);
+    }
+  };
+}
 
 const components: Components = {
   a({ node, ...props }) {
@@ -30,7 +46,16 @@ export function MarkdownResponse({ content }: { content: string }) {
   return createElement(
     'div',
     { className: 'assistant-markdown' },
-    createElement(Markdown, { remarkPlugins: [remarkGfm], skipHtml: true, components }, content),
+    createElement(
+      Markdown,
+      {
+        remarkPlugins: [remarkGfm],
+        rehypePlugins: [separateTouchingLinks],
+        skipHtml: true,
+        components,
+      },
+      content,
+    ),
   );
 }
 

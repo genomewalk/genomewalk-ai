@@ -1,3 +1,4 @@
+import { catalogReviewGroup } from './evidence-ranking.ts';
 import type { MatchedRow } from './types.ts';
 import { condList } from './genomewalk/conditions.ts';
 import { matchForLocalModel } from './local-evidence.ts';
@@ -69,6 +70,7 @@ export function compactMatch(row: MatchedRow) {
   const population = readable(populationFrequency.maximumPopulation);
   return {
     gene: variant.gene,
+    reviewGroup: catalogReviewGroup(row),
     variant: describeVariant(variant),
     yourCall: describeCall(genotype, variant.matchedAllele),
     clinvar: classification

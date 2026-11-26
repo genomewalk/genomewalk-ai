@@ -17,7 +17,7 @@ const outputBudget = (message: ChatMessage) =>
 export function MessageList({ messages, busy }: { messages: ChatMessage[]; busy: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
-  const lastUserId = [...messages].reverse().find((message) => message.role === 'user')?.id;
+  const lastUserId = messages.findLast((message) => message.role === 'user')?.id;
   useLayoutEffect(() => {
     following.current = true;
   }, [lastUserId]);
@@ -53,111 +53,73 @@ export function MessageList({ messages, busy }: { messages: ChatMessage[]; busy:
         aria-busy={busy}
       >
         {messages.map((message) => (
-          <article
-            key={message.id}
-            className={`message message-${message.role}`}
-            aria-label={message.role === 'user' ? 'You' : 'Genomewalk AI'}
-          >
-            <div className="message-byline">
-              {message.role === 'assistant' && <Icon name="sparkle" size={15} />}
-              <span>
-                {message.role === 'user'
-                  ? 'You'
-                  : message.general
-                    ? 'Genomewalk · conversation'
-                    : 'Genomewalk · local semantic review'}
-              </span>
-            </div>
-            {message.role === 'assistant' && <EmbeddingsEvidence message={message} />}
-            {message.role === 'assistant' &&
-              (message.content || message.status !== 'streaming') && (
-                <div className="local-answer-heading">
-                  <Icon name="chip" size={17} />
-                  <strong>
-                    {message.model!.shortLabel} ·{' '}
-                    {message.general ? 'conversation answer' : 'answer'}
-                  </strong>
-                  <span>
-                    {message.status === 'streaming'
-                      ? 'Writing on your device…'
-                      : message.status === 'error'
-                        ? 'Could not finish'
-                        : message.status === 'stopped'
-                          ? 'Stopped'
-                          : message.limited
-                            ? 'Token limit reached'
-                            : message.evidenceAnswer
-                              ? 'From matched records'
-                              : message.general
-                                ? 'Conversation · no new record search'
-                                : 'Generated on your device'}
-                  </span>
-                </div>
-              )}
-            {(message.content || message.status !== 'streaming') && (
-              <div
-                className={`message-bubble ${message.evidenceAnswer ? 'evidence-answer' : ''} ${message.status === 'error' ? 'message-failed' : ''}`}
-              >
-                {message.content ? (
-                  message.role === 'assistant' ? (
-                    <MarkdownResponse content={message.content} />
-                  ) : (
-                    message.content
-                  )
-                ) : message.status === 'stopped' ? (
-                  'Response stopped.'
-                ) : (
-                  'No response was generated.'
-                )}
-                {message.content && message.status === 'streaming' && (
-                  <span className="stream-cursor" aria-hidden="true" />
-                )}
-              </div>
-            )}
-            {message.role === 'assistant' && message.content && (
-              <ResponseSource content={message.content} />
-            )}
-            {message.usage && message.status !== 'streaming' && (
-              <p className="message-note local-token-usage">
-                {message.status === 'stopped'
-                  ? 'Stopped'
-                  : message.limited
-                    ? 'Limit reached'
-                    : message.finishReason === 'stop'
-                      ? 'Ended normally'
-                      : 'Stream ended'}{' '}
-                · {message.usage.completion_tokens.toLocaleString()} output tokens
-                {
-                  <>
-                    {' '}
-                    / {outputBudget(message).toLocaleString()} available ·{' '}
-                    {message.usage!.prompt_tokens.toLocaleString()} input tokens.
-                  </>
-                }{' '}
-                Counts from WebLLM.
-              </p>
-            )}
-            {message.status === 'error' && (
-              <p className="message-note">
-                This reply failed. This turn is excluded from local history.
-              </p>
-            )}
-            {message.status === 'stopped' && message.content && (
-              <p className="message-note">
-                You stopped this response. This partial answer is excluded from local history.
-              </p>
-            )}
-            {message.limited && (
-              <p className="message-note">
-                Output/context limit reached.{' '}
-                {message.general
-                  ? 'This partial explanation is excluded from local history. Ask a more focused question.'
-                  : 'The incomplete answer is excluded from local history. Please try again with a more focused question.'}
-              </p>
-            )}
-          </article>
+          <ConversationMessage key={message.id} message={message} />
         ))}
       </div>
     </div>
+  );
+}
+
+function ConversationMessage({ message }: { message: ChatMessage }) {
+  const isAssistant = message.role === 'assistant';
+  return (
+    <article
+      className={`message message-${message.role}`}
+      aria-label={isAssistant ? 'Genomewalk AI' : 'You'}
+    >
+      <div className="message-byline">
+        {isAssistant && <Icon name="sparkle" size={15} />}
+        <span>{isAssistant ? 'Genomewalk · local catalog review' : 'You'}</span>
+      </div>
+      {isAssistant && <EmbeddingsEvidence message={message} />}
+      {isAssistant && message.status !== 'streaming' && (
+        <div className="local-answer-heading">
+          <Icon name="chip" size={17} />
+          <strong>{message.model!.shortLabel} · answer</strong>
+          <span>
+            {message.status === 'error'
+              ? 'Could not finish'
+              : message.status === 'stopped'
+                ? 'Stopped'
+                : message.evidenceAnswer
+                  ? 'From matched records'
+                  : 'Generated on your device'}
+          </span>
+        </div>
+      )}
+      {message.status !== 'streaming' && (
+        <div
+          className={`message-bubble ${message.evidenceAnswer ? 'evidence-answer' : ''} ${message.status === 'error' ? 'message-failed' : ''}`}
+        >
+          {message.content ? (
+            isAssistant ? (
+              <MarkdownResponse content={message.content} />
+            ) : (
+              message.content
+            )
+          ) : message.status === 'stopped' ? (
+            'Response stopped.'
+          ) : (
+            'No response was generated.'
+          )}
+        </div>
+      )}
+      {isAssistant && message.content && <ResponseSource content={message.content} />}
+      {message.usage && message.status !== 'streaming' && (
+        <p className="message-note local-token-usage">
+          {message.status === 'stopped'
+            ? 'Stopped'
+            : message.finishReason === 'stop'
+              ? 'Ended normally'
+              : 'Stream ended'}{' '}
+          · {message.usage.completion_tokens.toLocaleString()} output tokens /{' '}
+          {outputBudget(message).toLocaleString()} available ·{' '}
+          {message.usage.prompt_tokens.toLocaleString()} input tokens. Counts from WebLLM.
+        </p>
+      )}
+      {message.status === 'error' && (
+        <p className="message-note">This reply failed. This turn is excluded from local history.</p>
+      )}
+    </article>
   );
 }

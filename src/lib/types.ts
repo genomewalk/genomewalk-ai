@@ -173,10 +173,7 @@ export interface CompletionOptions {
   generation?: Generation;
   onRequest?: (request: ModelRequest) => void;
 }
-export interface SearchPlan {
-  mode: 'search' | 'overview' | 'other' | 'followup';
-  query: string;
-}
+export type SearchPlan = { overview: true; query?: never } | { query: string; overview?: never };
 export interface SourceLink {
   label: string;
   url: string;
@@ -195,12 +192,7 @@ export interface ReferenceRecord {
   conditionClassifications: null;
   fields: RecordField[];
 }
-export interface GenomeProvenance {
-  kind: 'example' | 'upload';
-  label: string;
-}
 export interface RecordReference {
-  genomeSource?: GenomeProvenance | null;
   records: ReferenceRecord[];
 }
 export interface SemanticHit {

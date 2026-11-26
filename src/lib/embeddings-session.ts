@@ -2,9 +2,10 @@ import type {
   GenomeSource,
   GenomeConfig,
   SearchClient,
-  ModelLease,
   SearchPlan,
+  ModelLease,
   ModelRequest,
+  MatchedRow,
 } from './types.ts';
 import type {
   EmbeddingsState,
@@ -17,6 +18,27 @@ import type { ConversationTurn } from './conversation-context.ts';
 import type { Fetcher } from '../vendor/genomewalk/io/types.ts';
 import type { LocalModelSession } from './local-model-session.ts';
 
+import { readCompletion } from './local-model-request.ts';
+import { localModelSession } from './local-model-session.ts';
+import { EmbeddingsClient } from './embeddings-client.ts';
+import { matchLocalGenome, identifyLocalGenome } from './genome-client.ts';
+import { chooseGenomeFile } from './genome-source.ts';
+import { EXAMPLE_GENOME } from '../config/example-genome.ts';
+import { loadCatalogKeys, hydrateGenomewalkMatches } from './local-catalog.ts';
+import { searchDocument } from './semantic-search.ts';
+import { buildEmbeddingsContext } from './embeddings-context.ts';
+import { compactMatch } from './match-reference.ts';
+import { rankSemantic, rankCatalogForReview } from './evidence-ranking.ts';
+import { createEmbeddingsJourney, updateJourney, finishJourney } from './request-journey.ts';
+import { EMBEDDING_MODEL, RETRIEVAL } from '../config/embeddings.ts';
+import { buildCatalogSummary } from './catalog-summary.ts';
+import { parseLocalQuery, buildLocalQueryContext } from './local-query.ts';
+import { PREVIEW_LIMIT } from '../config/evidence-ranking.ts';
+import { MatchCache, matchCacheIdentity } from './match-cache.ts';
+import { loadReferenceConfig, referenceFetcher } from './public-files.ts';
+import { PublicationCatalogue } from '../vendor/genomewalk/catalogues/publications.ts';
+import { recordLimit } from '../config/evidence-answer.ts';
+
 interface SessionOptions {
   fetchImpl?: Fetcher;
   local?: Pick<LocalModelSession, 'state' | 'reserve' | 'release' | 'completePrivate'>;
@@ -26,27 +48,13 @@ interface SessionOptions {
   search?: SearchClient;
   matchCache?: MatchCache;
 }
-import { localModelSession } from './local-model-session.ts';
-import { EmbeddingsClient } from './embeddings-client.ts';
-import { matchLocalGenome, identifyLocalGenome } from './genome-client.ts';
-import { chooseGenomeFile } from './genome-source.ts';
-import { EXAMPLE_GENOME } from '../config/example-genome.ts';
-import { genomeProvenance } from './genome-provenance.ts';
-import { loadCatalogKeys, hydrateGenomewalkMatches } from './local-catalog.ts';
-import { searchDocument } from './semantic-search.ts';
-import { buildEmbeddingsContext } from './embeddings-context.ts';
-import { compactMatch } from './match-reference.ts';
-import { rankSemantic, rankCatalogOverview } from './evidence-ranking.ts';
-import { createEmbeddingsJourney, updateJourney, finishJourney } from './request-journey.ts';
-import { EMBEDDING_MODEL, RETRIEVAL } from '../config/embeddings.ts';
-import { PLAN_LABELS } from '../config/search-scope.ts';
-import { parseLocalQuery, buildLocalQueryContext } from './local-query.ts';
-import { PREVIEW_LIMIT } from '../config/evidence-ranking.ts';
-import { MatchCache, matchCacheIdentity } from './match-cache.ts';
-import { buildGeneralContext } from './general-context.ts';
-import { loadReferenceConfig, referenceFetcher } from './public-files.ts';
-import { PublicationCatalogue } from '../vendor/genomewalk/catalogues/publications.ts';
-import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
+
+interface QuestionTurn {
+  id: number;
+  question: string;
+  signal: AbortSignal;
+  lease: ModelLease;
+}
 
 const identity = (config: GenomeConfig) =>
   JSON.stringify([
@@ -316,15 +324,22 @@ export class EmbeddingsSession {
     signal?.throwIfAborted();
     this.step(id, 'index', {
       status: 'complete',
-      summary: `${index.count.toLocaleString()} embeddings · ${index.dimensions} dimensions · cached in memory`,
+      summary: `${index.count.toLocaleString()} records indexed · ${index.dimensions} dimensions per token · cached in memory`,
       data: {
         model: EMBEDDING_MODEL,
         ...index,
         documentTokenLimit: RETRIEVAL.documentTokens,
-        note: 'Public annotation text only is embedded. Long search documents are truncated by the tokenizer; answer evidence uses original annotations. Vectors stay in memory; verified matches are saved locally for refreshes.',
+        note: 'Public annotation text only is embedded. Search documents use the model’s token limit; answer evidence uses original annotations. Token vectors stay in memory; verified matches are saved locally for refreshes.',
       },
     });
-    this.prepared = { identity: key, source, total, result, documents };
+    this.prepared = {
+      identity: key,
+      source,
+      total,
+      result,
+      documents,
+      summary: buildCatalogSummary(result.matches),
+    };
     this.update({
       indexReady: true,
       matchCount: result.matches.length,
@@ -427,120 +442,18 @@ export class EmbeddingsSession {
           content: '',
           status: 'streaming',
           model: lease.model,
-          genomeSource: genomeProvenance(this.genome),
           journey: createEmbeddingsJourney(),
         },
       ],
     });
     try {
-      this.step(id, 'query', {
-        status: 'running',
-        summary: 'Resolving the latest question and any references locally…',
-      });
-      const planning = buildLocalQueryContext(question, this.history, lease.model);
-      const { messages: queryMessages, generation, ...historyBudget } = planning;
-      let queryText = '';
-      let queryFinish;
-      let queryRequest: ModelRequest | undefined;
-      for await (const chunk of this.local.completePrivate(queryMessages, {
-        signal,
-        lease,
-        generation,
-        onRequest: (request) => {
-          queryRequest = structuredClone(request);
-          this.step(id, 'query', { data: { request: queryRequest, ...historyBudget } });
-        },
-      })) {
-        queryText += chunk.choices?.[0]?.delta?.content ?? '';
-        queryFinish = chunk.choices?.[0]?.finish_reason ?? queryFinish;
-      }
-      if (queryFinish !== 'stop')
-        throw new Error('Local search planning did not finish normally. Please try again.');
-      const plan = parseLocalQuery(queryText);
-      this.step(id, 'query', {
-        status: 'complete',
-        summary: `${PLAN_LABELS[plan.mode]} · selected by the local planner`,
-        data: {
-          request: queryRequest,
-          response: plan,
-          decisionSource: 'local_model',
-          ...historyBudget,
-        },
-      });
-      if (plan.mode === 'other' || plan.mode === 'followup') {
-        await this.answerConversation(id, question, lease, signal, plan.mode === 'followup');
-        return true;
-      }
       const prepared = await this.prepareIndex(signal, id);
       this.updateMessage(id, { result: prepared.result });
-      const ranked = await this.retrieve(prepared, plan, signal, id);
-      this.step(id, 'context', {
-        status: 'running',
-        summary: 'Preparing compact records within the selected model’s context budget…',
-      });
-      // Public metadata comes from Genomewalk's static shards, never a PubMed API.
-      // Missing labels leave the original PMID links usable.
-      const publicationLabels = await this.publications
-        .load(ranked.slice(0, MAX_CANDIDATES).flatMap((row) => (row.pmids ?? '').split(',')))
-        .catch(() => ({}));
       signal.throwIfAborted();
-      const context = buildEmbeddingsContext(question, ranked, prepared.result, lease.model, plan, {
-        genomeSource: this.genome,
-        publicationLabels,
-      });
-      const { messages, ...details } = context;
-      this.updateMessage(id, { context: details, stage: 'local' });
-      this.step(id, 'context', { data: { messages, ...details } });
-      this.update({
-        progressText: `${lease.model.shortLabel} is answering from the matched records…`,
-      });
-      let raw = '';
-      let finishReason;
-      let usage;
-      for await (const chunk of this.local.completePrivate(messages, {
-        signal,
-        lease,
-        generation: context.generation,
-        onRequest: (request) => {
-          this.updateMessage(id, { context: { ...details, submitted: true } });
-          this.step(id, 'context', {
-            status: 'complete',
-            summary: `${context.included} current records sent · ${context.historyTurns} earlier turns · ${context.inputBytes.toLocaleString()} input bytes`,
-            data: { ...details, submitted: true, request: structuredClone(request) },
-          });
-          this.step(id, 'answer', {
-            status: 'running',
-            summary: 'Answering from relevant candidates…',
-          });
-        },
-      })) {
-        raw += chunk.choices?.[0]?.delta?.content ?? '';
-        finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
-        usage = chunk.usage ?? usage;
-        // Publish only a complete answer; keep incomplete output out of conversation history.
-        this.updateMessage(id, { finishReason, usage });
-      }
-      this.step(id, 'answer', { data: { raw, finishReason, usage } });
-      if (finishReason !== 'stop' || !raw.trim())
-        throw new Error('The local answer did not finish normally. Please try again.');
-      // Follow-ups use completed conversation only, never a second source payload.
-      this.history.push({
-        identity: prepared.identity,
-        question,
-        answer: raw,
-      });
-      this.updateMessage(id, {
-        status: 'complete',
-        content: raw,
-        evidenceAnswer: true,
-        usage,
-        finishReason,
-      });
-      this.step(id, 'answer', {
-        status: 'complete',
-        summary: 'Answered directly from the supplied candidates',
-        data: { raw, finishReason, usage },
-      });
+      const turn = { id, question, signal, lease };
+      const plan = await this.planQuestion(turn, prepared.summary);
+      const ranked = await this.retrieve(prepared, plan, signal, id);
+      await this.answerQuestion(turn, prepared, plan, ranked);
       this.end(id, 'complete');
     } catch (error) {
       const message =
@@ -567,6 +480,40 @@ export class EmbeddingsSession {
     }
     return true;
   }
+  private async planQuestion({ id, question, signal, lease }: QuestionTurn, summary: string) {
+    this.step(id, 'query', {
+      status: 'running',
+      summary: 'Resolving the latest question and any references locally…',
+    });
+    const planning = buildLocalQueryContext(question, this.history, lease.model, summary);
+    const { messages: queryMessages, generation, ...historyBudget } = planning;
+    let queryRequest: ModelRequest | undefined;
+    const { raw, finishReason } = await readCompletion(
+      this.local.completePrivate(queryMessages, {
+        signal,
+        lease,
+        generation,
+        onRequest: (request) => {
+          queryRequest = structuredClone(request);
+          this.step(id, 'query', { data: { request: queryRequest, ...historyBudget } });
+        },
+      }),
+    );
+    if (finishReason !== 'stop')
+      throw new Error('Local search planning did not finish normally. Please try again.');
+    const plan = parseLocalQuery(raw);
+    this.step(id, 'query', {
+      status: 'complete',
+      summary: plan.query || 'Catalog overview',
+      data: {
+        request: queryRequest,
+        response: plan,
+        catalogSummary: summary,
+        ...historyBudget,
+      },
+    });
+    return plan;
+  }
   async retrieve(prepared: PreparedIndex, plan: SearchPlan, signal: AbortSignal, id: number) {
     const matches = prepared.result.matches;
     this.step(id, 'semantic', {
@@ -574,14 +521,11 @@ export class EmbeddingsSession {
       summary: `Considering all ${matches.length.toLocaleString()} usable matches…`,
     });
     this.update({ progressText: 'Finding relevant matches locally…' });
-    let ordered;
-    if (plan.mode === 'search') {
-      const scores = await this.search.call('score', { query: plan.query }, { signal });
-      signal?.throwIfAborted();
-      ordered = rankSemantic(scores, matches);
-    } else {
-      ordered = rankCatalogOverview(matches);
-    }
+    const ordered = plan.query
+      ? rankSemantic(await this.search.call('score', { query: plan.query }, { signal }), matches)
+      : rankCatalogForReview(matches);
+    signal.throwIfAborted();
+    const ordering = plan.query ? 'Semantic similarity' : 'Catalog review priority';
     const rows = ordered.slice(0, PREVIEW_LIMIT).map((hit) => ({
       ...hit,
       record: compactMatch(matches[hit.index]!),
@@ -589,53 +533,46 @@ export class EmbeddingsSession {
     }));
     this.step(id, 'semantic', {
       status: 'complete',
-      summary: `${matches.length.toLocaleString()} matches considered · ${plan.mode === 'search' ? 'semantic similarity' : 'catalog overview'}`,
+      summary: `${matches.length.toLocaleString()} matches considered · ${ordering}`,
       data: {
-        mode: plan.mode,
         query: plan.query,
-        formula:
-          plan.mode === 'search'
-            ? 'Semantic similarity'
-            : 'Classification → review stars → catalog order',
+        formula: ordering,
         total: matches.length,
         rows,
         scores: ordered,
         previewLimit: PREVIEW_LIMIT,
-        note: 'All usable matches are considered before the answer-context limit. Topic searches use similarity only; overviews use catalog classification and review stars.',
       },
     });
     return ordered.map((hit) => matches[hit.index]!);
   }
-  async answerConversation(
-    id: number,
-    question: string,
-    lease: ModelLease,
-    signal: AbortSignal,
-    followup: boolean,
+  private async answerQuestion(
+    { id, question, signal, lease }: QuestionTurn,
+    prepared: PreparedIndex,
+    plan: SearchPlan,
+    ranked: MatchedRow[],
   ) {
-    const context = buildGeneralContext(question, this.history, lease.model, {
-      followup,
-      genomeSource: this.genome,
-    });
-    const { messages, ...details } = context;
-    for (const step of ['catalog', 'matching', 'index', 'semantic'])
-      this.step(id, step, {
-        status: 'skipped',
-        summary: `${followup ? 'Follow-up' : 'General'}: no new genome search.`,
-      });
-    this.updateMessage(id, { general: true, stage: 'local', context: details });
     this.step(id, 'context', {
       status: 'running',
-      summary: followup
-        ? 'Preparing the question and conversation history.'
-        : 'Preparing the new general question.',
-      data: { messages, ...details },
+      summary: 'Preparing compact records within the selected model’s context budget…',
     });
-    this.update({ progressText: 'Answering on this device…' });
-    let content = '';
-    let finishReason;
-    let usage;
-    for await (const chunk of this.local.completePrivate(messages, {
+    // Public metadata comes from Genomewalk's static shards, never a PubMed API.
+    // Missing labels leave the original PMID links usable.
+    const publicationLabels = await this.publications
+      .load(ranked.slice(0, recordLimit(plan)).flatMap((row) => (row.pmids ?? '').split(',')))
+      .catch(() => ({}));
+    signal.throwIfAborted();
+    const context = buildEmbeddingsContext(question, ranked, prepared.result, lease.model, plan, {
+      publicationLabels,
+      history: this.history,
+      summary: prepared.summary,
+    });
+    const { messages, ...details } = context;
+    this.updateMessage(id, { context: details });
+    this.step(id, 'context', { data: { messages, ...details } });
+    this.update({
+      progressText: `${lease.model.shortLabel} is answering from the matched records…`,
+    });
+    const reply = this.local.completePrivate(messages, {
       signal,
       lease,
       generation: context.generation,
@@ -643,36 +580,40 @@ export class EmbeddingsSession {
         this.updateMessage(id, { context: { ...details, submitted: true } });
         this.step(id, 'context', {
           status: 'complete',
-          summary: followup
-            ? 'Question and conversation sent; no source records.'
-            : 'Question sent without previous conversation or records.',
+          summary: `${context.included} current records sent · ${context.historyTurns} earlier turns · ${context.inputBytes.toLocaleString()} input bytes`,
           data: { ...details, submitted: true, request: structuredClone(request) },
         });
         this.step(id, 'answer', {
           status: 'running',
-          summary: 'Responding or asking for clarification locally.',
+          summary: 'Answering from relevant candidates…',
         });
       },
-    })) {
-      content += chunk.choices?.[0]?.delta?.content ?? '';
-      finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
-      usage = chunk.usage ?? usage;
-      this.updateMessage(id, { content, finishReason, usage });
-    }
-    if (!content.trim())
-      throw new Error('The local model returned an empty answer. Please try again.');
-    const limited = finishReason === 'length';
-    if (!limited && finishReason !== 'stop')
-      throw new Error('The local answer did not finish normally.');
-    if (!limited) this.history.push({ question, answer: content });
-
-    this.updateMessage(id, { status: 'complete', limited });
-    this.step(id, 'answer', {
-      status: limited ? 'limited' : 'complete',
-      summary: 'Conversation response · no new record search.',
-      data: { raw: content, finishReason, usage },
     });
-    this.end(id, limited ? 'limited' : 'complete');
+    // Show progress while streaming; only complete answers enter the conversation.
+    const { raw, finishReason, usage } = await readCompletion(reply, (progress) =>
+      this.updateMessage(id, progress),
+    );
+    this.step(id, 'answer', { data: { raw, finishReason, usage } });
+    if (finishReason !== 'stop' || !raw.trim())
+      throw new Error('The local answer did not finish normally. Please try again.');
+    // Store complete generated exchanges; source records are fetched for each new question.
+    this.history.push({
+      identity: prepared.identity,
+      question,
+      answer: raw,
+    });
+    this.updateMessage(id, {
+      status: 'complete',
+      content: raw,
+      evidenceAnswer: true,
+      usage,
+      finishReason,
+    });
+    this.step(id, 'answer', {
+      status: 'complete',
+      summary: 'Answered directly from the supplied candidates',
+      data: { raw, finishReason, usage },
+    });
   }
   end(id: number, status: StepStatus, reason?: string) {
     const m = this.state.messages.find((m) => m.id === id);

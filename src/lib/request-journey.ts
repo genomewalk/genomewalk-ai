@@ -14,12 +14,11 @@ export function createEmbeddingsJourney(now = Date.now()): Journey {
         ['answer', 'Local answer', 'On this device'],
       ] as const
     ).map(([id, label, location]) => ({
-      id: id as JourneyStep['id'],
+      id,
       label,
       location,
       status: 'pending',
       summary: 'Not started',
-      events: [],
     })),
   };
 }
@@ -35,11 +34,7 @@ export function updateJourney(
       if (step.id !== id) return step;
       const next = { ...step, ...patch };
       if (patch.status === 'running' && !step.startedAt) next.startedAt = now;
-      if (
-        ['complete', 'limited', 'error', 'stopped', 'skipped', 'paused'].includes(
-          patch.status ?? '',
-        )
-      )
+      if (patch.status && patch.status !== 'pending' && patch.status !== 'running')
         next.endedAt = now;
       return next;
     }),

@@ -24,13 +24,11 @@ import { Icon } from './Icons.tsx';
 
 export const STEP_STATUS: Record<StepStatus, string> = {
   pending: 'Waiting',
-  paused: 'Paused',
   running: 'Working',
   complete: 'Done',
   skipped: 'Skipped',
   error: 'Failed',
   stopped: 'Stopped',
-  limited: 'Limit reached',
 };
 
 const PANEL_WIDTH_KEY = 'genomewalk.step-panel-width';
@@ -192,9 +190,7 @@ function StepPanel({ steps, selected, onSelect, onClose, question, heading }: Pa
           <p className={`step-panel-status is-${step.status}`}>
             <span />
             {STEP_STATUS[step.status]}
-            {['error', 'stopped', 'limited'].includes(step.status) && step.summary && (
-              <> · {step.summary}</>
-            )}
+            {['error', 'stopped'].includes(step.status) && step.summary && <> · {step.summary}</>}
           </p>
           <div className="step-panel-detail">{step.detail}</div>
         </div>

@@ -2,8 +2,7 @@ import type { CSSProperties } from 'react';
 import type { ChatMessage, JourneyStep, StepId } from '../lib/session-types.ts';
 import { useId } from 'react';
 import { PreparationIcon as Icon } from './PreparationIcons.tsx';
-import { PLAN_LABELS } from '../config/search-scope.ts';
-import { MAX_CANDIDATES } from '../config/evidence-answer.ts';
+import { recordLimit } from '../config/evidence-answer.ts';
 import { STEP_STATUS } from './RequestProgress.tsx';
 import iconLicense from '../assets/lucide-license.txt?raw';
 
@@ -20,47 +19,31 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
   >;
   const plan = steps.query.data?.response;
   const context = message.context;
-  const followup = plan?.mode === 'followup';
-  const general = plan?.mode === 'other' || followup;
   const stages = [
     {
       step: steps.query,
       title: 'Understand the question',
       icon: 'cpu' as const,
-      description: ['The local model chooses', 'how to respond.'],
-      value: plan ? PLAN_LABELS[plan.mode] : 'Choosing an approach…',
+      description: ['Use the catalog summary', 'and recent conversation.'],
+      value: plan?.overview ? 'Catalog overview' : plan ? 'Search query ready' : 'Preparing query…',
       detail: ['Your latest question takes priority.'],
     },
     {
       step: steps.semantic,
-      title: general ? 'Continue the conversation' : 'Find relevant matches',
-      icon: general ? ('cpu' as const) : ('database' as const),
-      description: general
-        ? ['No new search of your genome.']
-        : plan?.mode === 'overview'
-          ? ['Order the full match pool by', 'classification and review stars.']
-          : ['Order matches by similarity', 'to the search topic.'],
-      value: general
-        ? 'No new variant records'
-        : `${count(steps.semantic.data?.total)} matches considered`,
-      detail: general
-        ? [followup ? 'Use the previous conversation.' : 'Use only the new question.']
-        : [`Up to ${context?.maxNewRecords ?? MAX_CANDIDATES} new records for the answer.`],
+      title: 'Find relevant matches',
+      icon: 'database' as const,
+      description: plan?.overview
+        ? ['Use the leading matches', 'in catalog review order.']
+        : ['Order matches by similarity', 'to the search topic.'],
+      value: `${count(steps.semantic.data?.total)} matches considered`,
+      detail: [`Up to ${context?.maxNewRecords ?? recordLimit(plan)} new records for the answer.`],
     },
     {
       step: steps.context,
       title: 'Prepare the model input',
       icon: 'database' as const,
-      description: general
-        ? followup
-          ? ['Question, instructions and', 'previous conversation.']
-          : ['New question and instructions.']
-        : ['Question, instructions', 'and candidate records.'],
-      value: general
-        ? followup
-          ? 'Question + conversation'
-          : 'New question only'
-        : `${count(context?.included)} candidate records`,
+      description: ['Question, summary, conversation', 'and candidate records.'],
+      value: `${count(context?.included)} candidate records`,
       detail: context
         ? [
             `Earlier exchanges included: ${count(context.historyTurns)}`,
@@ -72,13 +55,9 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
       step: steps.answer,
       title: 'Build the answer',
       icon: 'cpu' as const,
-      description: general
-        ? ['The local model explains or', 'asks for clarification.']
-        : ['The local model answers using', 'the relevant candidates.'],
-      value: general ? 'Conversation response' : 'One answer call',
-      detail: general
-        ? ['General explanations can use', 'model knowledge.']
-        : ['Variant details and links come', 'from the source records.'],
+      description: ['The local model answers using', 'conversation and relevant records.'],
+      value: 'One answer call',
+      detail: ['Variant details and links come', 'from the source records.'],
     },
   ].slice(0, selected + 1);
   const width = selected === 0 ? 424 : 840;

@@ -1,4 +1,4 @@
-import type { MatchedRow, SourceLink } from './types.ts';
+import type { CatalogRow, MatchedRow, SourceLink } from './types.ts';
 
 // The prepared catalog supplies symbols, not numeric NCBI Gene IDs.
 export function geneSource(gene: string): SourceLink {
@@ -18,6 +18,20 @@ const list = (value: unknown, separator = '|') =>
     .map((item) => item.trim())
     .filter(Boolean) ?? [];
 const positiveId = (value: unknown) => typeof value === 'string' && /^[1-9]\d*$/.test(value);
+export function refSnpIds(value: CatalogRow['rsids']) {
+  return [
+    ...new Set(
+      list(value).flatMap((id) => {
+        const match = /^(?:rs)?([1-9]\d*)$/i.exec(id);
+        return match ? [`rs${match[1]}`] : [];
+      }),
+    ),
+  ];
+}
+export function alleleFraction(value: CatalogRow['af']) {
+  const fraction = number(typeof value === 'string' ? value.trim() : value);
+  return fraction !== null && fraction >= 0 && fraction <= 1 ? fraction : null;
+}
 // Genomewalk supplies gnomAD v4 keys in both build catalogs. Always use that
 // normalized GRCh38 key, never the uploaded file’s coordinate or build.
 const gnomadKeyPattern = /^(?:[1-9]|1\d|2[0-2]|X|Y)-[1-9]\d*-[ACGT]+-[ACGT]+$/;
@@ -37,15 +51,7 @@ export function matchForLocalModel(row: MatchedRow, build: string) {
         : 'unknown';
   const variationId = text(row.variationid);
   const pmids = list(row.pmids, ',').filter(positiveId);
-  // ClinVar's RS field is pipe-separated. Keep only complete RefSNP IDs;
-  // adding the standard rs prefix is formatting, not an identifier lookup.
-  const rsIds = [
-    ...new Set(
-      list(row.rsids)
-        .map((id) => /^(?:rs)?([1-9]\d*)$/i.exec(id)?.[1])
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
+  const rsIds = refSnpIds(row.rsids);
   const gnomadKey = text(row.gnomadkey);
   const match = {
     citation: row.citation,
@@ -92,7 +98,7 @@ export function matchForLocalModel(row: MatchedRow, build: string) {
     populationFrequency: {
       source: 'gnomAD',
       units: 'allele_fraction_not_percent_or_personal_risk',
-      overallAlleleFrequency: number(row.af),
+      overallAlleleFrequency: alleleFraction(row.af),
       overallAlleleCount: number(row.gnomadac),
       overallAlleleNumber: number(row.an),
       maximumPopulationAlleleFrequency: number(row.afmax),
@@ -106,8 +112,8 @@ export function matchForLocalModel(row: MatchedRow, build: string) {
         ? `https://www.ncbi.nlm.nih.gov/clinvar/variation/${variationId}/`
         : null,
       dbsnp: rsIds.map((id) => ({
-        label: `rs${id}`,
-        url: `https://www.ncbi.nlm.nih.gov/snp/rs${id}`,
+        label: id,
+        url: `https://www.ncbi.nlm.nih.gov/snp/${id}`,
       })),
       gnomadUrl:
         ['GRCh37', 'GRCh38'].includes(build) && gnomadKeyPattern.test(gnomadKey ?? '')

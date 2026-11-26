@@ -1,12 +1,13 @@
+import { buildCatalogSummary } from '../src/lib/catalog-summary.ts';
 import type { ModelRequest, SearchPlan } from '../src/lib/types.ts';
 import { fakeEngine, fakeSearch } from './helpers/inference.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rankSemantic } from '../src/lib/evidence-ranking.ts';
-import { MAX_CANDIDATES } from '../src/config/evidence-answer.ts';
+import { RECORD_LIMIT } from '../src/config/evidence-answer.ts';
 import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
-import { EMBEDDINGS_ANSWER_PROMPT } from '../src/prompts/embeddings.ts';
+import { ANSWER_PROMPT } from '../src/prompts/answer.ts';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
 import { getModelProfile } from '../src/config/models/index.ts';
 
@@ -40,6 +41,7 @@ const result = {
 };
 const prepared = {
   identity: 'synthetic',
+  summary: buildCatalogSummary(records),
   source: { build: 'GRCh38', sha256: 'synthetic' },
   total: 30,
   result,
@@ -109,25 +111,18 @@ test('partial pools, duplicate indices and invalid similarities fail visibly', (
   assert.deepEqual(rankSemantic([], []), []);
 });
 
-test('session answers once from three candidates with shared prompts and Other bypass', async () => {
+test('each question searches the full pool, answers once and preserves history', async () => {
   const requests: ModelRequest[] = [];
   const operations: string[] = [];
-  let plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
+  let plan: SearchPlan = { query: 'synthetic topic' };
   const engine = fakeEngine({
     dispose() {},
     async reset() {},
     async *complete(request) {
       requests.push(structuredClone(request));
-      const isPlanner =
-        request.response_format &&
-        JSON.parse(request.response_format.schema!).anyOf?.some(
-          (branch: { properties?: { mode?: unknown } }) => branch.properties?.mode,
-        );
-      const content = isPlanner
+      const content = request.response_format
         ? JSON.stringify(plan)
-        : request.response_format
-          ? '{"selected":["v1","v2","v3"]}'
-          : 'The supplied records list this condition.';
+        : 'The supplied records list this condition.';
       yield { choices: [{ delta: { content }, finish_reason: 'stop' }] };
     },
   });
@@ -151,12 +146,12 @@ test('session answers once from three candidates with shared prompts and Other b
   await session.send('First question');
   assert.equal(session.state.error, null);
   const first = session.state.messages.at(-1)!;
-  assert.equal(first!.context!.included, MAX_CANDIDATES);
-  assert.equal(first!.context!.maxNewRecords, MAX_CANDIDATES);
+  assert.equal(first!.context!.included, RECORD_LIMIT.topic);
+  assert.equal(first!.context!.maxNewRecords, RECORD_LIMIT.topic);
   assert.equal(requests.length, 2);
   assert.equal(requests[1]!.response_format, undefined);
   assert.equal(first!.content, 'The supplied records list this condition.');
-  assert.equal(JSON.parse(requests[1]!.messages.at(-1)!.content).reference.records.length, 3);
+  assert.equal(JSON.parse(requests[1]!.messages.at(-1)!.content.split('\n')[1]!).length, 5);
   assert.equal(first!.context!.evidence!.coverage.currentTurn.retrievedCandidates, 30);
   assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
   assert.equal(
@@ -167,34 +162,34 @@ test('session answers once from three candidates with shared prompts and Other b
     first!.journey!.steps.find((step) => step.id === 'semantic')!.data!.scores!.length,
     30,
   );
-  assert.equal(requests[1]!.messages[0]!.content, EMBEDDINGS_ANSWER_PROMPT);
-  plan = { mode: 'search', query: 'another topic resolved by planner' };
+  assert.equal(requests[1]!.messages[0]!.content, ANSWER_PROMPT);
+  plan = { query: 'another topic resolved by planner' };
   await session.send('Follow-up or topic change');
   const follow = session.state.messages.at(-1)!;
   assert.equal(session.state.error, null);
-  assert.equal(follow!.context!.historyTurns, 0);
+  assert.equal(follow!.context!.historyTurns, 1);
   assert.equal(follow!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
   assert.equal(
     follow!.context!.evidence!.earlierMatches.length,
     0,
-    'Repeated records are deduplicated',
+    'Previous source payloads are not appended to history',
   );
-  plan = { mode: 'overview', query: '' };
+  plan = { query: 'SYNTHETIC29' };
   await session.send('Whole pool');
-  assert.equal(session.state.messages.at(-1)!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC29');
-  plan = { mode: 'other', query: '' };
+  assert.equal(session.state.messages.at(-1)!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
+  plan = { query: 'general question' };
   await session.send('General question');
-  assert.equal(session.state.messages.at(-1)!.general, true);
-  assert.deepEqual(operations, ['score', 'score']);
+  assert.equal(session.state.messages.at(-1)!.context!.historyTurns, 3);
+  assert.deepEqual(operations, ['score', 'score', 'score', 'score']);
   assert.equal(session.state.error, null);
   session.dispose();
 });
 
-test('a small context omits whole candidates and never exceeds three', () => {
-  const plan: SearchPlan = { mode: 'search', query: 'synthetic topic' };
-  const profile = { ...getModelProfile('qwen3.5-9b'), contextWindowTokens: 7000 };
+test('a small context omits whole candidates and stays within the topic limit', () => {
+  const plan: SearchPlan = { query: 'synthetic topic' };
+  const profile = { ...getModelProfile('qwen3.5-9b'), contextWindowTokens: 9000 };
   const c = buildEmbeddingsContext('Question', records, result, profile, plan);
-  assert.ok(c.included < 3);
+  assert.ok(c.included < RECORD_LIMIT.topic);
   assert.ok(c.consideredRows.some((row) => row.status === 'context_budget'));
   assert.ok(c.inputBytes <= c.inputByteLimit);
   assert.equal(c.historyTurns, 0);
@@ -212,7 +207,7 @@ test('a third record exceeding the context budget is omitted whole without takin
     candidates,
     result,
     getModelProfile('qwen3-4b'),
-    { mode: 'search', query: 'synthetic topic' },
+    { query: 'synthetic topic' },
     { maxNewRecords: 3 },
   );
   assert.equal(context.maxNewRecords, 3);

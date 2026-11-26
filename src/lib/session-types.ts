@@ -7,18 +7,14 @@ import type {
   ModelChunk,
   ModelRequest,
   ModelMessage,
-  Generation,
   SearchPlan,
-  GenomeProvenance,
 } from './types.ts';
 import type { compactMatch } from './match-reference.ts';
 import type { catalogPriority } from './evidence-ranking.ts';
 import type { buildEmbeddingsContext } from './embeddings-context.ts';
-import type { buildGeneralContext } from './general-context.ts';
 import type { CacheInfo } from './match-cache.ts';
 
-export type StepStatus =
-  'pending' | 'running' | 'complete' | 'skipped' | 'error' | 'stopped' | 'limited' | 'paused';
+export type StepStatus = 'pending' | 'running' | 'complete' | 'skipped' | 'error' | 'stopped';
 export type StepId = 'catalog' | 'matching' | 'index' | 'query' | 'semantic' | 'context' | 'answer';
 export interface RankedHit {
   index: number;
@@ -31,12 +27,7 @@ export interface RankedRecord extends RankedHit {
   record: ReturnType<typeof compactMatch>;
   searchText: string;
 }
-export type EvidenceContext = Omit<ReturnType<typeof buildEmbeddingsContext>, 'messages'>;
-export type GeneralContext = Omit<ReturnType<typeof buildGeneralContext>, 'messages'>;
-// Context metadata is shared by both answer paths; record fields exist only after retrieval.
-export type AnswerContext = Omit<GeneralContext, 'generation'> & {
-  generation: Generation;
-} & Partial<Omit<EvidenceContext, keyof GeneralContext>>;
+export type AnswerContext = Omit<ReturnType<typeof buildEmbeddingsContext>, 'messages'>;
 export interface StepData extends Partial<AnswerContext> {
   source?: CatalogSource;
   total?: number;
@@ -55,8 +46,7 @@ export interface StepData extends Partial<AnswerContext> {
   note?: string;
   request?: ModelRequest;
   response?: SearchPlan;
-  decisionSource?: string;
-  mode?: SearchPlan['mode'];
+  catalogSummary?: string;
   query?: string;
   formula?: string;
   rows?: RankedRecord[];
@@ -64,7 +54,6 @@ export interface StepData extends Partial<AnswerContext> {
   previewLimit?: number;
   messages?: ModelMessage[];
   raw?: string;
-  rendered?: string;
   finishReason?: ModelChunk['choices'][number]['finish_reason'];
   usage?: ModelChunk['usage'];
 }
@@ -92,14 +81,10 @@ export interface ChatMessage {
   question?: string;
   status?: 'streaming' | 'complete' | 'stopped' | 'error';
   model?: ModelProfile;
-  genomeSource?: GenomeProvenance | null;
   journey?: Journey;
   result?: MatchResult;
   context?: AnswerContext;
-  stage?: string;
-  general?: boolean;
   evidenceAnswer?: boolean;
-  limited?: boolean;
   finishReason?: ModelChunk['choices'][number]['finish_reason'];
   usage?: ModelChunk['usage'];
 }
@@ -109,6 +94,7 @@ export interface PreparedIndex {
   total: number;
   result: MatchResult;
   documents: string[];
+  summary: string;
 }
 export interface EmbeddingsState {
   phase: 'idle' | 'checking' | 'ready' | 'stopped' | 'error';

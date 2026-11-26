@@ -1,15 +1,24 @@
+import { buildCatalogSummary } from '../src/lib/catalog-summary.ts';
 import type { SearchPlan } from '../src/lib/types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
+import { buildLocalQueryContext } from '../src/lib/local-query.ts';
 import { buildAnswerReference } from '../src/lib/evidence-answer.ts';
+import { ANSWER_PROMPT } from '../src/prompts/answer.ts';
 import { localModelRequest } from '../src/lib/local-model-request.ts';
+import { QUERY_SCHEMA } from '../src/config/query-schema.ts';
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
 import fixture from './fixtures/evidence.json' with { type: 'json' };
 
-const plan: SearchPlan = { mode: 'search', query: fixture.plan.query };
+const plan: SearchPlan = { query: fixture.plan.query };
 const rows = fixture.rows.map((row, i) => ({ ...row, citation: `C${i + 1}` }));
 const result = { build: 'GRCh38', matches: rows, issues: [] };
+const sourceLinks = (record: ReturnType<typeof buildAnswerReference>['records'][number]) =>
+  [record.gene, ...record.variants, record.clinvar, record.gnomad, ...record.papers].filter(
+    (source) => source !== null,
+  );
+
 const context = (candidates = rows) =>
   buildEmbeddingsContext(fixture.question, candidates, result, LOCAL_MODELS[0]!, plan);
 
@@ -17,30 +26,41 @@ test('answer candidates preserve every source field and link without duplicate U
   const c = context([rows[0]!, rows[1]!, rows[3]!]);
   const before = structuredClone(c.recordReference);
   const reference = buildAnswerReference(c.recordReference);
-  assert.deepEqual(JSON.parse(c.messages.at(-1)!.content).reference, reference);
+  assert.equal(
+    c.messages.at(-1)!.content,
+    `Matched variant records:\n${JSON.stringify(reference.records)}\n\n${buildCatalogSummary(rows)}\n\nSearch topic: ${plan.query}\n\nQuestion: ${fixture.question}`,
+  );
+  assert.match(
+    reference.records[0]!.description,
+    /Catalog review group: Less-reviewed disease claims/,
+  );
+  assert.match(reference.records[1]!.description, /Catalog review group: Other ClinVar matches/);
   assert.deepEqual(c.recordReference, before);
   assert.equal(Object.hasOwn(reference, 'note'), false);
   assert.match(c.messages[0]!.content, /not mapped to individual conditions/);
   assert.match(c.messages[0]!.content, /no paper text/);
   for (const [index, original] of c.recordReference.records.entries()) {
     const record = reference.records[index]!;
-    assert.equal(record.gene, original.gene);
+    assert.equal(record.gene?.name ?? null, original.gene);
     assert.ok(record.description.includes(original.variant));
     for (const field of original.fields) {
       if (field.text) assert.ok(record.description.includes(field.text));
       for (const item of field.items ?? []) if (item) assert.ok(record.description.includes(item));
       for (const link of field.sources)
-        assert.ok(record.sources.some((s) => s.url === link.url && s.label === link.label));
+        assert.ok(sourceLinks(record).some((s) => s.link === link.url && s.name === link.label));
     }
-    assert.equal(new Set(record.sources.map((s) => s.url)).size, record.sources.length);
-    assert.equal(Object.hasOwn(record, 'id'), false, 'No selector-only IDs in the answer request');
+    assert.equal(new Set(sourceLinks(record).map((s) => s.link)).size, sourceLinks(record).length);
+    assert.equal(Object.hasOwn(record, 'id'), false, 'UI record IDs are not model instructions');
     assert.equal(Object.hasOwn(record, 'origin'), false);
   }
-  assert.deepEqual(reference.records[1]!.variant_ids, ['rs757362953']);
+  assert.deepEqual(
+    reference.records[1]!.variants.map((v) => v.name),
+    ['rs757362953'],
+  );
   assert.doesNotMatch(reference.records[1]!.description, /ClinVar ID:/);
   assert.ok(
-    reference.records[1]!.sources.some(
-      (source) => source.url === 'https://www.ncbi.nlm.nih.gov/clinvar/variation/575366/',
+    sourceLinks(reference.records[1]!).some(
+      (source) => source.link === 'https://www.ncbi.nlm.nih.gov/clinvar/variation/575366/',
     ),
   );
   assert.match(reference.records[1]!.description, /0\.000949274%/);
@@ -51,11 +71,11 @@ test('answer candidates preserve every source field and link without duplicate U
     /Uncertain significance \(2\); Likely benign \(1\)/,
   );
   assert.ok(
-    reference.records[2]!.sources.some(
-      (s) => s.url === 'https://pubmed.ncbi.nlm.nih.gov/19917125/',
+    sourceLinks(reference.records[2]!).some(
+      (s) => s.link === 'https://pubmed.ncbi.nlm.nih.gov/19917125/',
     ),
   );
-  assert.ok(reference.records[0]!.sources.some((s) => s.url.includes('/gene/?term=CDKN2B')));
+  assert.ok(sourceLinks(reference.records[0]!).some((s) => s.link.includes('/gene/?term=CDKN2B')));
 });
 
 test('publication links and absence remain source facts, never paper contents', () => {
@@ -66,13 +86,10 @@ test('publication links and absence remain source facts, never paper contents', 
     reference.records[1]!.description,
     /2 publication links are supplied; paper contents are not included/,
   );
-  assert.deepEqual(
-    reference.records[1]!.sources.filter((s) => s.label.startsWith('PubMed')),
-    [
-      { label: 'PubMed 12345', url: 'https://pubmed.ncbi.nlm.nih.gov/12345/' },
-      { label: 'PubMed 67890', url: 'https://pubmed.ncbi.nlm.nih.gov/67890/' },
-    ],
-  );
+  assert.deepEqual(reference.records[1]!.papers, [
+    { name: 'PubMed 12345', link: 'https://pubmed.ncbi.nlm.nih.gov/12345/' },
+    { name: 'PubMed 67890', link: 'https://pubmed.ncbi.nlm.nih.gov/67890/' },
+  ]);
 });
 
 test('prepared citation labels reach the answer and inspector without changing evidence or URLs', () => {
@@ -96,13 +113,15 @@ test('prepared citation labels reach the answer and inspector without changing e
     { label: 'PubMed 67890', url: 'https://pubmed.ncbi.nlm.nih.gov/67890/' },
   ]);
   assert.ok(
-    reference.records[0]!.sources.some((source) => source.label === publications.sources[0]!.label),
+    sourceLinks(reference.records[0]!).some(
+      (source) => source.name === publications.sources[0]!.label,
+    ),
   );
   assert.doesNotMatch(reference.records[0]!.description, /PubMed ID:/);
   for (const source of publications.sources)
     assert.ok(
-      reference.records[0]!.sources.some(
-        (candidate) => candidate.label === source.label && candidate.url === source.url,
+      sourceLinks(reference.records[0]!).some(
+        (candidate) => candidate.name === source.label && candidate.link === source.url,
       ),
     );
   assert.match(labeled.messages.at(-1)!.content, /Example et al., Journal 2020/);
@@ -115,30 +134,68 @@ test('fresh answer inputs contain only the current candidates and preserve sourc
   assert.equal(c.recordReference.records[0]!.origin, 'current');
   const record = buildAnswerReference(c.recordReference).records[0]!;
   assert.ok(record.description.includes(c.recordReference.records[0]!.variant));
-  assert.ok(record.sources.length);
+  assert.ok(sourceLinks(record).length);
 });
 
-test('all models share the direct-answer contract, sampling and available context budget', () => {
+test('answers share one prompt and use model defaults while query generation stays fixed', () => {
   const baseline = context();
+  const history = [{ question: 'Earlier question', answer: 'Earlier answer' }];
   for (const model of LOCAL_MODELS) {
     const c = buildEmbeddingsContext(fixture.question, rows, result, model, plan);
     assert.deepEqual(c.messages, baseline.messages);
     assert.deepEqual(c.generation, baseline.generation);
-    const request = localModelRequest(model, c.messages, c.generation);
-    assert.equal(request.temperature, 0);
-    assert.equal(request.top_p, 1);
-    assert.equal(request.seed, 42);
-    assert.equal(request.response_format, undefined);
-    assert.deepEqual(request.extra_body, model.extraBody);
-    assert.equal(request.max_tokens, 2048);
-    assert.equal(c.responseTokenLimit, model.contextWindowTokens);
-    assert.ok(c.inputBytes <= c.inputByteLimit);
+    const overview = buildEmbeddingsContext('Overview', rows, result, model, {
+      overview: true,
+    });
+    assert.equal(
+      overview.messages.at(-1)!.content,
+      `Matched variant records:\n${JSON.stringify(buildAnswerReference(overview.recordReference).records)}\n\n${buildCatalogSummary(rows)}\n\nRecord order: catalog review priority.\n\nQuestion: Overview`,
+    );
+    for (const answerContext of [
+      c,
+      overview,
+      buildEmbeddingsContext('Explain it', rows, result, model, plan, { history }),
+      buildEmbeddingsContext('What is DNA?', rows, result, model, plan, { history }),
+    ]) {
+      assert.equal(answerContext.messages[0]!.content, ANSWER_PROMPT);
+      const request = localModelRequest(model, answerContext.messages, answerContext.generation);
+      assert.equal(request.temperature, model.generation.temperature);
+      assert.equal(request.top_p, model.generation.top_p);
+      assert.equal(request.presence_penalty, model.generation.presence_penalty);
+      assert.equal(request.repetition_penalty, model.generation.repetition_penalty);
+      assert.equal(Object.hasOwn(request, 'seed'), false);
+      assert.equal(request.response_format, undefined);
+      assert.deepEqual(request.extra_body, model.extraBody);
+      assert.equal(request.max_tokens, 2048);
+      assert.equal(answerContext.responseTokenLimit, model.contextWindowTokens);
+      assert.ok(answerContext.inputBytes <= answerContext.inputByteLimit);
+    }
+    for (const previous of [[], history]) {
+      const route = buildLocalQueryContext(
+        'Explain the records',
+        previous,
+        model,
+        buildCatalogSummary(rows),
+      );
+      const request = localModelRequest(model, route.messages, route.generation);
+      assert.equal(request.temperature, 0);
+      assert.equal(request.top_p, 1);
+      assert.equal(request.seed, 42);
+      assert.equal(request.presence_penalty, 0);
+      assert.equal(request.repetition_penalty, 1);
+      assert.equal(request.max_tokens, 512);
+      assert.deepEqual(request.extra_body, {});
+      assert.deepEqual(JSON.parse(request.response_format!.schema!), QUERY_SCHEMA);
+    }
   }
 });
 
 test('missing candidates remain an empty list rather than a negative genome finding', () => {
   const c = context([]);
-  assert.deepEqual(JSON.parse(c.messages.at(-1)!.content).reference.records, []);
+  assert.equal(
+    c.messages.at(-1)!.content,
+    `Matched variant records:\n[]\n\n${buildCatalogSummary(rows)}\n\nSearch topic: ${plan.query}\n\nQuestion: ${fixture.question}`,
+  );
   assert.equal(c.included, 0);
   assert.equal(c.recordReference.records.length, 0);
 });
@@ -151,9 +208,18 @@ test('rsIDs and source URLs survive, while malformed or missing identifiers are 
   ];
   const c = context(candidates);
   const reference = buildAnswerReference(c.recordReference);
-  assert.deepEqual(reference.records[0]!.variant_ids, ['rs6413458']);
-  assert.deepEqual(reference.records[1]!.variant_ids, ['rs148559653', 'rs267607614']);
-  assert.deepEqual(reference.records[2]!.variant_ids, []);
+  assert.deepEqual(
+    reference.records[0]!.variants.map((v) => v.name),
+    ['rs6413458'],
+  );
+  assert.deepEqual(
+    reference.records[1]!.variants.map((v) => v.name),
+    ['rs148559653', 'rs267607614'],
+  );
+  assert.deepEqual(
+    reference.records[2]!.variants.map((v) => v.name),
+    [],
+  );
   const wire = JSON.stringify(reference);
   assert.ok(wire.includes('https://www.ncbi.nlm.nih.gov/snp/rs6413458'));
   assert.ok(wire.includes('https://www.ncbi.nlm.nih.gov/snp/rs267607614'));

@@ -57,33 +57,31 @@ The build context is allowlisted. Checks and compilation run without network acc
 
 ## The flow
 
-1. **Prepare once:** read the selected file in a worker, match exact supported alleles to the public catalog, and embed the matched annotations locally.
-2. **Understand the question:** the selected local model chooses Specific topic, Overview, General, or Follow-up, using available conversation history.
-3. **Retrieve:** topic search orders matches by semantic similarity alone. Search text contains conditions, gene names and variant IDs; full annotations, including frequencies, remain available to the answer model. An overview orders all usable matches by catalog fields. General and Follow-up answer without retrieval.
-4. **Answer:** Specific topic and Overview send up to three candidates as factual descriptions and source links, without old conversation. One answer call is instructed to discuss at most three relevant records. Follow-up receives only the previous conversation and question; General receives only the new question. The chat displays that generated response; original candidate fields remain available in Model input. There is no separate selector call. The three-record input cap is enforced by code; the three-record response limit is a model instruction.
+1. **Prepare once.** The browser matches the file against the catalog, builds a compact summary of all matched variants, and indexes their conditions, gene names and variant IDs.
+2. **Find the scope.** The local model uses the question, summary and recent conversation to write a topic query. For a catalog-wide question it requests an overview.
+3. **Choose records.** Overviews use the leading records in catalog review order. For a specific topic, ColBERT Small ranks all matches by token-level similarity.
+4. **Answer.** The local model gets the summary, question, up to three overview records or five topic matches and the recent exchanges that fit. The grouped summary includes catalog-wide counts and distinct listed condition or trait names. Open the request journey to see the query decision, record order and model input.
 
-There are no question-keyword, gene-name, or disease-specific routing rules. General explanations use model knowledge; new variant facts come from the verified reference; follow-ups rely on earlier generated conversation. Generated answers can misinterpret or omit evidence; original source fields and links remain available for inspection.
-
-[Architecture, ranking and privacy boundaries](docs/ARCHITECTURE.md).
+The chat renders the model’s Markdown. The model can retrieve an unrelated record or misinterpret evidence.
 
 ## Code map
 
-| Location                                       | Responsibility                                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `src/components/`                              | Genome intake, chat, source evidence and step diagrams                                  |
-| `src/styles/`                                  | Chat layout, journey panels and genome intake styling                                   |
-| `src/lib/embeddings-session.ts`                | Preparation and question lifecycle; cancellation and conversation history               |
-| `src/lib/genome-source.ts`, `genome.worker.ts` | Local file identification, hashing and matching                                         |
-| `src/lib/local-catalog.ts`, `public-files.ts`  | Static references, validation and deployment paths                                      |
-| `src/lib/embeddings.worker.ts`                 | Local embedding index and cosine similarity                                             |
-| `src/lib/evidence-ranking.ts`                  | Shared field-based retrieval policy                                                     |
-| `src/lib/evidence-answer.ts`                   | Original record fields and compact answer descriptions with source links                |
-| `src/lib/local-model-session.ts`, `webllm.ts`  | Model selection, worker lifetime and inference                                          |
-| `src/config/`, `src/prompts/`                  | Model profiles, budgets, ranking policy and shared prompts                              |
-| `src/vendor/genomewalk/`                       | Genomewalk parsing and validation modules, with documented adaptations and fingerprints |
-| `public/ref/`, `public/samples/`               | Checked-in public data; no personal files                                               |
-| `scripts/`                                     | Reference synchronization, release checks and static preview                            |
-| `tests/`                                       | Matching, privacy boundaries, context, routing, rendering and static hosting checks     |
+| Location                                       | Responsibility                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `src/components/`                              | Genome intake, chat, source evidence and step diagrams                                     |
+| `src/styles/`                                  | Chat layout, journey panels and genome intake styling                                      |
+| `src/lib/embeddings-session.ts`                | Preparation and question lifecycle; cancellation and conversation history                  |
+| `src/lib/genome-source.ts`, `genome.worker.ts` | Local file identification, hashing and matching                                            |
+| `src/lib/local-catalog.ts`, `public-files.ts`  | Static references, validation and deployment paths                                         |
+| `src/lib/embeddings.worker.ts`                 | Local ColBERT index; token preparation and MaxSim scoring live in `src/lib/colbert.ts`     |
+| `src/lib/evidence-ranking.ts`                  | Shared field-based retrieval policy                                                        |
+| `src/lib/evidence-answer.ts`                   | Original record fields and compact answer descriptions with source links                   |
+| `src/lib/local-model-session.ts`, `webllm.ts`  | Model selection, worker lifetime and inference                                             |
+| `src/config/`, `src/prompts/`                  | Model profiles, budgets, ranking policy and shared prompts                                 |
+| `src/vendor/genomewalk/`                       | Genomewalk parsing and validation modules, with documented adaptations and fingerprints    |
+| `public/ref/`, `public/samples/`               | Checked-in public data; no personal files                                                  |
+| `scripts/`                                     | Reference synchronization, release checks and static preview                               |
+| `tests/`                                       | Matching, privacy boundaries, context, query planning, rendering and static hosting checks |
 
 ## Reference updates
 
