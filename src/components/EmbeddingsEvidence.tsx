@@ -3,10 +3,10 @@ import type { SourceLink, RecordField, ReferenceRecord } from '../lib/types.ts';
 import { Fragment } from 'react';
 import { RetrievalDetail } from './RetrievalDetail.tsx';
 import { RequestProgress, STEP_STATUS } from './RequestProgress.tsx';
-import { Disclosure } from './StepDetails.tsx';
+import { Disclosure, RawMessages, RawText, Stats } from './StepDetails.tsx';
+import { tones } from './DiagramParts.tsx';
 import { RequestDiagram } from './RequestDiagram.tsx';
 import { MarkdownResponse } from './MarkdownResponse.ts';
-import { Icon } from './Icons.tsx';
 import { recordLimit } from '../config/evidence-answer.ts';
 import { geneSource } from '../lib/local-evidence.ts';
 
@@ -87,15 +87,7 @@ function RecordReference({ record }: { record: ReferenceRecord }) {
       <p className="input-record-location">{record.variant}</p>
       <RecordFacts fields={primary} />
       {!!supporting.length && (
-        <Disclosure
-          className="record-supporting"
-          title={
-            <>
-              <Icon name="chevron" size={16} />
-              <span>Conditions, review & sources</span>
-            </>
-          }
-        >
+        <Disclosure className="record-supporting" title="Conditions, review & sources">
           <RecordFacts fields={supporting} />
         </Disclosure>
       )}
@@ -110,7 +102,8 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
     StepId,
     JourneyStep
   >;
-  const plan = steps.query.data?.response;
+  const query = steps.query.data;
+  const plan = query?.response;
   const input = steps.context.data;
   const messages = input?.request?.messages ?? input?.messages ?? [];
   const reference = context?.recordReference;
@@ -119,6 +112,7 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
     ['error', 'stopped'].includes(step.status),
   );
   const history = messages.slice(1, -1);
+  const answer = steps.answer.data;
 
   const questionDetail = (
     <>
@@ -126,23 +120,28 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
         {message.model.shortLabel} uses your question, the catalog summary and recent conversation
         to identify a search topic or request a catalog overview.
       </p>
-      <RequestDiagram message={message} selected={0} />
       {plan && (
-        <p>
-          {plan.query ? (
-            <>
-              <strong>Search for:</strong> {plan.query}
-            </>
-          ) : (
-            'Catalog overview · records in review order'
-          )}
-        </p>
+        <Stats
+          items={[
+            ['Decision', plan.query ? 'Search for a topic' : 'Catalog overview'],
+            ['Search topic', plan.query ?? 'None · records in review order'],
+            ['Earlier exchanges read', number(query?.historyTurns)],
+          ]}
+        />
       )}
-      {steps.query.data?.catalogSummary && (
-        <Disclosure title="Catalog summary supplied to both calls">
-          <pre className="catalog-summary">{steps.query.data.catalogSummary}</pre>
+      {query?.raw && (
+        <>
+          <h3>Model output</h3>
+          <RawText>{query.raw}</RawText>
+        </>
+      )}
+      {query?.request && (
+        <Disclosure title="Raw model input" note={`${query.request.messages.length} messages`}>
+          <RawMessages messages={query.request.messages} />
         </Disclosure>
       )}
+      <h3>Where this step fits</h3>
+      <RequestDiagram message={message} selected={0} />
     </>
   );
 
@@ -154,7 +153,6 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
         conversation exchanges that fit. It is asked to use only relevant records, which may be
         none. The complete genome and search vectors are not part of this input.
       </p>
-      <RequestDiagram message={message} selected={2} />
       {context ? (
         <>
           {((context.omitted ?? 0) > 0 || context.omittedHistoryTurns > 0) && (
@@ -165,18 +163,36 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
                 `Earlier exchanges left out to make room: ${context.omittedHistoryTurns}.`}
             </p>
           )}
+          <Stats
+            items={[
+              ['Candidate records', number(context.included)],
+              ['Earlier exchanges', number(context.historyTurns)],
+              [
+                'Input size',
+                `${number(context.inputBytes)} of ${number(context.inputByteLimit)} bytes`,
+              ],
+            ]}
+          />
           {!!recordCount && <h3>Records available to the model</h3>}
           {reference?.records.map((record) => (
             <RecordReference key={record.id} record={record} />
           ))}
           {!!history.length && (
-            <Disclosure title="Earlier conversation included">
+            <Disclosure
+              title="Earlier conversation included"
+              note={`${history.length / 2} exchanges`}
+            >
               {history.map((item, index) => (
                 <div className="step-history-entry" key={index}>
                   <strong>{item.role === 'user' ? 'You' : 'Answer'}</strong>
                   <MarkdownResponse content={item.content} />
                 </div>
               ))}
+            </Disclosure>
+          )}
+          {!!messages.length && (
+            <Disclosure title="Raw model input" note={`${messages.length} messages`}>
+              <RawMessages messages={messages} />
             </Disclosure>
           )}
         </>
@@ -187,6 +203,8 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
             : 'The information for the model is not ready yet.'}
         </p>
       )}
+      <h3>Where this step fits</h3>
+      <RequestDiagram message={message} selected={2} />
     </>
   );
 
@@ -198,7 +216,6 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
         Markdown. Inspect supplied records and their source links in Model input; supplied records
         are not necessarily used in the answer.
       </p>
-      <RequestDiagram message={message} selected={3} />
       {['complete', 'running'].includes(steps.answer.status) && (
         <p className="step-footnote">
           {steps.answer.status === 'complete'
@@ -206,6 +223,25 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
             : 'The answer will appear in the chat when ready.'}
         </p>
       )}
+      {answer?.usage && (
+        <Stats
+          items={[
+            ['Input tokens', number(answer.usage.prompt_tokens)],
+            ['Answer tokens', number(answer.usage.completion_tokens)],
+            [
+              'Finished',
+              answer.finishReason === 'stop' ? 'Normally' : (answer.finishReason ?? '—'),
+            ],
+          ]}
+        />
+      )}
+      {answer?.raw && (
+        <Disclosure title="Raw model output" note="Markdown as generated">
+          <RawText>{answer.raw}</RawText>
+        </Disclosure>
+      )}
+      <h3>Where this step fits</h3>
+      <RequestDiagram message={message} selected={3} />
     </>
   );
 
@@ -216,21 +252,22 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
       ? `${number(result?.matches.length)} matches reviewed → ${recordCount} records provided to the local model`
       : 'Working on your question on this device…';
   const trail = [
-    { ...steps.query, label: 'Question', detail: questionDetail },
+    { ...steps.query, label: 'Question', detail: questionDetail, accent: tones.blue.main },
     {
       ...steps.semantic,
       ...(preparationFailure
         ? { status: preparationFailure.status, summary: preparationFailure.summary }
         : {}),
       label: 'Find matches',
+      accent: tones.violet.main,
       detail: preparationFailure ? (
         <p>{preparationFailure.summary}</p>
       ) : (
         <RetrievalDetail message={message} step={steps.semantic} />
       ),
     },
-    { ...steps.context, label: 'Model input', detail: inputDetail },
-    { ...steps.answer, label: 'Answer', detail: answerDetail },
+    { ...steps.context, label: 'Model input', detail: inputDetail, accent: tones.amber.main },
+    { ...steps.answer, label: 'Answer', detail: answerDetail, accent: tones.green.main },
   ];
   return (
     <RequestProgress

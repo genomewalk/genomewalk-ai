@@ -1,15 +1,22 @@
-import type { CSSProperties } from 'react';
 import type { ChatMessage, JourneyStep, StepId } from '../lib/session-types.ts';
 import { useId } from 'react';
 import { PreparationIcon as Icon } from './PreparationIcons.tsx';
+import {
+  ArrowMarker,
+  CARD,
+  DIAGRAM_WIDTH,
+  StepCard,
+  ink,
+  line,
+  muted,
+  tones,
+} from './DiagramParts.tsx';
 import { recordLimit } from '../config/evidence-answer.ts';
-import { STEP_STATUS } from './RequestProgress.tsx';
 import iconLicense from '../assets/lucide-license.txt?raw';
 
 const count = (value: number | null | undefined) => (value == null ? '—' : value.toLocaleString());
-const ink = '#244C40',
-  muted = '#64756C',
-  green = '#587D53';
+const FIRST_CARD = 142;
+const HEIGHT = FIRST_CARD + 4 * CARD.height + 3 * CARD.gap + 20;
 
 export function RequestDiagram({ message, selected }: { message: ChatMessage; selected: number }) {
   const id = useId();
@@ -23,69 +30,52 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
     {
       step: steps.query,
       title: 'Understand the question',
-      icon: 'cpu' as const,
+      illustration: 'question' as const,
+      tone: tones.blue,
       description: ['Use the catalog summary', 'and recent conversation.'],
       value: plan?.overview ? 'Catalog overview' : plan ? 'Search query ready' : 'Preparing query…',
-      detail: ['Your latest question takes priority.'],
+      detail: 'Your latest question takes priority.',
     },
     {
       step: steps.semantic,
       title: 'Find relevant matches',
-      icon: 'database' as const,
+      illustration: 'search' as const,
+      tone: tones.violet,
       description: plan?.overview
         ? ['Use the leading matches', 'in catalog review order.']
         : ['Order matches by similarity', 'to the search topic.'],
       value: `${count(steps.semantic.data?.total)} matches considered`,
-      detail: [`Up to ${context?.maxNewRecords ?? recordLimit(plan)} new records for the answer.`],
+      detail: `Up to ${context?.maxNewRecords ?? recordLimit(plan)} new records for the answer.`,
     },
     {
       step: steps.context,
       title: 'Prepare the model input',
-      icon: 'database' as const,
+      illustration: 'input' as const,
+      tone: tones.amber,
       description: ['Question, summary, conversation', 'and candidate records.'],
       value: `${count(context?.included)} candidate records`,
       detail: context
-        ? [
-            `Earlier exchanges included: ${count(context.historyTurns)}`,
-            context.submitted ? 'Passed to the local model' : 'Not passed to the model yet',
-          ]
-        : ['Fits within the model’s available space.'],
+        ? `Earlier exchanges: ${count(context.historyTurns)} · ${context.submitted ? 'passed to the model' : 'not passed yet'}`
+        : 'Fits within the model’s available space.',
     },
     {
       step: steps.answer,
       title: 'Build the answer',
-      icon: 'cpu' as const,
+      illustration: 'answer' as const,
+      tone: tones.green,
       description: ['The local model answers using', 'conversation and relevant records.'],
       value: 'One answer call',
-      detail: ['Variant details and links come', 'from the source records.'],
+      detail: 'Details and links come from source records.',
     },
-  ].slice(0, selected + 1);
-  const width = selected === 0 ? 424 : 840;
-  const height = selected < 2 ? 410 : 650;
-  const positions: [number, number][] = [
-    [24, 160],
-    [440, 160],
-    [440, 400],
-    [24, 400],
   ];
-  const arrows = ['M212 126V157', 'M400 252H437', 'M628 350V397', 'M440 492H403'];
+  const arrowX = CARD.x + 58;
   return (
-    <figure
-      className="request-diagram"
-      style={
-        {
-          maxWidth: width,
-          '--diagram-min-width': selected === 0 ? '340px' : '680px',
-        } as CSSProperties
-      }
-      tabIndex={0}
-      aria-label="Request flow diagram"
-    >
+    <figure className="step-diagram" tabIndex={0} aria-label="Request flow diagram">
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
+        width={DIAGRAM_WIDTH}
+        height={HEIGHT}
+        viewBox={`0 0 ${DIAGRAM_WIDTH} ${HEIGHT}`}
         role="img"
         aria-labelledby={`${id}-title`}
         aria-describedby={`${id}-description`}
@@ -95,108 +85,68 @@ export function RequestDiagram({ message, selected }: { message: ChatMessage; se
           From your question to a local answer — step {selected + 1} of 4
         </title>
         <desc id={`${id}-description`}>
-          {stages
-            .map((stage) => `${stage.title}: ${stage.value}. ${stage.detail.join(' ')}`)
-            .join(' ')}{' '}
-          All processing shown happens in your browser.
+          {stages.map((stage) => `${stage.title}: ${stage.value}. ${stage.detail}`).join(' ')} All
+          processing shown happens in your browser.
         </desc>
         <metadata>{iconLicense}</metadata>
         <defs>
-          <marker
-            id={`${id}-arrow`}
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto"
-          >
-            <path
-              d="M1 1L9 5L1 9"
-              fill="none"
-              stroke={green}
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </marker>
+          <ArrowMarker id={`${id}-arrow`} color="#9CA3AF" />
         </defs>
         <rect
-          x="8"
-          y="8"
-          width={width - 16}
-          height={height - 16}
+          x="0.5"
+          y="0.5"
+          width={DIAGRAM_WIDTH - 1}
+          height={HEIGHT - 1}
           rx="18"
-          fill="#F2F6EC"
-          stroke="#B9C8AF"
+          fill="#FAFBFC"
+          stroke={line}
         />
-        <Icon name="panels-top-left" x={25} y={27} size={26} />
-        <text x="64" y="47" fill={ink} fontSize="20" fontWeight="600">
+        <Icon name="panels-top-left" x={20} y={17} size={22} color={muted} />
+        <text x="52" y="34" fill={ink} fontSize="16" fontWeight="700">
           Your browser
         </text>
-        <Icon name="shield-check" x={width - 212} y={30} size={20} />
-        <text x={width - 182} y="46" fill={muted} fontSize="13">
+        <Icon
+          name="shield-check"
+          x={DIAGRAM_WIDTH - 164}
+          y={20}
+          size={16}
+          color={tones.green.main}
+        />
+        <text x={DIAGRAM_WIDTH - 20} y="33" textAnchor="end" fill={muted} fontSize="12">
           Stays on your device
         </text>
-        <path d={`M8 64H${width - 8}`} stroke="#D4DFCB" />
-        <rect x="24" y="82" width="376" height="44" rx="9" fill="#FFFEFA" stroke="#D3DBCD" />
-        <text x="212" y="110" textAnchor="middle" fill={ink} fontSize="16">
+        <path d={`M0 54H${DIAGRAM_WIDTH}`} stroke={line} />
+        <rect x={CARD.x} y="70" width={CARD.width} height="44" rx="22" fill="#FFF" stroke={line} />
+        <text x={DIAGRAM_WIDTH / 2} y="97" textAnchor="middle" fill={ink} fontSize="14">
           Your question + recent conversation
         </text>
         {stages.map((stage, i) => {
-          const [x, y] = positions[i]!;
-          const current = i === selected;
+          const y = FIRST_CARD + i * (CARD.height + CARD.gap);
           return (
-            <g key={stage.step.id} data-request-stage={i + 1}>
+            <g key={stage.step.id}>
               <path
-                d={arrows[i]}
-                fill="none"
-                stroke={green}
+                d={`M${arrowX} ${y - CARD.gap + 3}V${y - 3}`}
+                stroke="#9CA3AF"
                 strokeWidth="2"
                 markerEnd={`url(#${id}-arrow)`}
               />
-              <g transform={`translate(${x} ${y})`}>
-                <rect
-                  width="376"
-                  height="190"
-                  rx="13"
-                  fill={current ? '#EAF1E0' : '#FFFEFA'}
-                  stroke={current ? green : '#D3DBCD'}
-                  strokeWidth={current ? 2 : 1}
-                />
-                <circle cx="27" cy="29" r="15" fill={current ? green : '#E7EFDC'} />
-                <text
-                  x="27"
-                  y="35"
-                  textAnchor="middle"
-                  fill={current ? '#FFF' : ink}
-                  fontSize="16"
-                  fontWeight="600"
-                >
-                  {i + 1}
-                </text>
-                <text x="51" y="35" fill={ink} fontSize="18" fontWeight="600">
-                  {stage.title}
-                </text>
-                {stage.description.map((line, n) => (
-                  <text key={n} x="20" y={64 + n * 22} fill={muted} fontSize="16">
-                    {line}
-                  </text>
-                ))}
-                <Icon name={stage.icon} x={20} y={103} size={26} />
-                <text x="57" y="124" fill={ink} fontSize="19" fontWeight="600">
+              <StepCard
+                y={y}
+                number={i + 1}
+                title={stage.title}
+                illustration={stage.illustration}
+                tone={stage.tone}
+                state={i === selected ? 'current' : i < selected ? 'past' : 'later'}
+                status={stage.step.status}
+                description={stage.description}
+              >
+                <text x="120" y="98" fill={ink} fontSize="15" fontWeight="700">
                   {stage.value}
                 </text>
-                {stage.detail.map((line, n) => (
-                  <text key={n} x="20" y={151 + n * 21} fill={muted} fontSize="15">
-                    {line}
-                  </text>
-                ))}
-              </g>
-              <text x={x + 20} y={y + 210} fill={muted} fontSize="13">
-                {current ? 'Viewing this step · ' : ''}
-                {STEP_STATUS[stage.step.status]}
-              </text>
+                <text x="120" y="118" fill={muted} fontSize="13">
+                  {stage.detail}
+                </text>
+              </StepCard>
             </g>
           );
         })}

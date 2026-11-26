@@ -15,4 +15,4 @@ export const REVIEW_GROUPS = [
   'Other ClinVar matches',
 ];
 
-export const PREVIEW_LIMIT = 24;
+export const PREVIEW_LIMIT = 10;

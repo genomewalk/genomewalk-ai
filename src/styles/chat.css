@@ -1096,8 +1096,3 @@ details pre {
     margin-top: 6px;
   }
 }
-
-.catalog-summary {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}

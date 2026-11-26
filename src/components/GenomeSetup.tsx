@@ -7,6 +7,7 @@ import { EXAMPLE_GENOME } from '../config/example-genome.ts';
 import { BrandMark, Icon } from './Icons.tsx';
 import { RequestProgress } from './RequestProgress.tsx';
 import { PreparationDiagram } from './PreparationDiagram.tsx';
+import { tones } from './DiagramParts.tsx';
 
 export function PreparationProgress({
   journey,
@@ -24,6 +25,7 @@ export function PreparationProgress({
         ...step,
         label: ['Catalog', 'Match', 'Search index'][index]!,
         detail: <PreparationDiagram journey={journey} selected={index} genome={genome} />,
+        accent: [tones.blue, tones.coral, tones.violet][index]!.main,
       }))}
       summary={summary}
       panelHeading={{

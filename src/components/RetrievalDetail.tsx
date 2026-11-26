@@ -1,5 +1,5 @@
 import type { ChatMessage, JourneyStep } from '../lib/session-types.ts';
-import { Disclosure } from './StepDetails.tsx';
+import { Disclosure, RawText, Stats } from './StepDetails.tsx';
 import { RequestDiagram } from './RequestDiagram.tsx';
 import { recordLimit } from '../config/evidence-answer.ts';
 
@@ -20,80 +20,77 @@ export function RetrievalDetail({ message, step }: { message: ChatMessage; step:
         Up to {limit} new records are prepared for the answer, as space allows. This order helps
         choose records to review; it does not measure personal risk.
       </p>
-      <RequestDiagram message={message} selected={1} />
       {data?.rows && (
         <>
-          {data.query && (
-            <p>
-              <strong>Searching for:</strong> {data.query}
-            </p>
-          )}
+          <Stats
+            items={[
+              [
+                plan?.overview ? 'Ordering' : 'Search topic',
+                data.query ?? 'Catalog review priority',
+              ],
+              ['Matches considered', data.total?.toLocaleString() ?? '—'],
+              ['Records for the answer', `Up to ${limit}`],
+            ]}
+          />
           <h3>{plan?.overview ? 'Matches in catalog review order' : 'Matches in search order'}</h3>
-          <p>
-            Showing the first {data.rows.length} of {data.total?.toLocaleString()} matches. Expand a
-            gene to inspect its record.
+          <p className="step-footnote">
+            First {data.rows.length} of {data.total?.toLocaleString()}. Open a row to inspect its
+            record.
           </p>
-          <div
-            className="local-table-scroll"
-            role="region"
-            aria-label="Ordered matches"
-            tabIndex={0}
-          >
-            <table className="local-stage-table">
-              <colgroup>
-                <col className="rank-column" />
-                <col />
-                <col className="status-column" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">Order</th>
-                  <th scope="col">Matched variant</th>
-                  <th scope="col">Model input</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.map((hit) => {
-                  const row = message.result!.matches[hit.index]!;
-                  const status = considered.get(row.citation);
-                  const label = !context
-                    ? 'Waiting'
-                    : status === 'included'
-                      ? context.submitted
-                        ? 'Included'
-                        : 'Ready'
-                      : status === 'context_budget'
-                        ? 'No room'
-                        : 'Not included';
-                  return (
-                    <tr key={hit.index} className={status === 'included' ? 'is-included' : ''}>
-                      <td>{hit.rank}</td>
-                      <td>
-                        <Disclosure title={<strong>{hit.record.gene || 'Unnamed gene'}</strong>}>
-                          <p>{hit.record.variant}</p>
-                          <p>{hit.record.yourCall}</p>
-                          <p>{hit.record.conditions.join('; ')}</p>
-                        </Disclosure>
-                        <span className="local-record-caption">
+          <ol className="match-list">
+            {data.rows.map((hit) => {
+              const row = message.result!.matches[hit.index]!;
+              const status = considered.get(row.citation);
+              const label = !context
+                ? ''
+                : status === 'included'
+                  ? context.submitted
+                    ? 'Sent to model'
+                    : 'Ready'
+                  : status === 'context_budget'
+                    ? 'No room'
+                    : '';
+              const { record } = hit;
+              const stars = hit.priority.reviewStars;
+              return (
+                <li key={hit.index} className={status === 'included' ? 'is-included' : ''}>
+                  <span className="match-rank">{hit.rank}</span>
+                  <Disclosure
+                    title={
+                      <>
+                        <strong>{record.gene || 'Unnamed gene'}</strong>
+                        {record.sources.dbSNP?.[0] && ` · ${record.sources.dbSNP[0].label}`}
+                        <small>
+                          {record.conditions[0] ?? 'No listed condition'} ·{' '}
                           {hit.priority.classification} ·{' '}
-                          {hit.priority.reviewStars == null
-                            ? 'Review status unknown'
-                            : `${hit.priority.reviewStars} ${hit.priority.reviewStars === 1 ? 'star' : 'stars'}`}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={status === 'included' ? 'local-sent-label' : ''}>
-                          {label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          {stars == null
+                            ? 'review status unknown'
+                            : `${stars} ${stars === 1 ? 'star' : 'stars'}`}
+                        </small>
+                      </>
+                    }
+                    note={
+                      <>
+                        {hit.similarity != null && (
+                          <span title="Similarity score">{hit.similarity.toFixed(2)}</span>
+                        )}
+                        {label && <span className="match-badge">{label}</span>}
+                      </>
+                    }
+                  >
+                    <p>{record.variant}</p>
+                    <p>{record.yourCall}</p>
+                    {record.conditions.length > 1 && <p>{record.conditions.join('; ')}</p>}
+                    <RawText label="Text used for search">{hit.searchText}</RawText>
+                  </Disclosure>
+                </li>
+              );
+            })}
+          </ol>
         </>
       )}
+      <h3>Where this step fits</h3>
+      <RequestDiagram message={message} selected={1} />
     </>
   );
 }

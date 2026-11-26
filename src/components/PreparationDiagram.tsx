@@ -1,138 +1,142 @@
-import type { SVGProps, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { Journey, JourneyStep } from '../lib/session-types.ts';
 import type { GenomeSource } from '../lib/types.ts';
+import type { PreparationIconName } from './PreparationIcons.tsx';
+import type { Tone } from './DiagramParts.tsx';
 import { useId } from 'react';
 import { EMBEDDING_MODEL } from '../config/embeddings.ts';
 import iconLicense from '../assets/lucide-license.txt?raw';
 import { PreparationIcon as Icon } from './PreparationIcons.tsx';
+import {
+  ArrowMarker,
+  CARD,
+  DIAGRAM_WIDTH,
+  StepCard,
+  ink,
+  line,
+  muted,
+  tones,
+} from './DiagramParts.tsx';
 
 const count = (value: number | null | undefined) => (value == null ? '—' : value.toLocaleString());
 const labels = ['Catalog', 'Match', 'Search index'];
-const ink = '#244C40',
-  muted = '#64756C',
-  green = '#587D53',
-  blue = '#728B97';
+const grey = '#9CA3AF';
+const HEIGHT = 888;
+// Vertical positions of the three step cards; the gaps hold the side inputs.
+const cardY = [252, 460, 668] as const;
 
-function Text({
+function Label({
   x,
   y,
-  children,
-  size = 16,
-  weight = 400,
-  color = ink,
-  ...props
-}: Omit<SVGProps<SVGTextElement>, 'color'> & {
-  x: number;
-  y: number;
-  children: ReactNode;
-  size?: number;
-  weight?: number;
-  color?: string;
-}) {
-  return (
-    <text x={x} y={y} fontSize={size} fontWeight={weight} fill={color} {...props}>
-      {children}
-    </text>
-  );
-}
-function Lines({
-  x,
-  y,
-  rows,
-  size = 16,
-  dy = 25,
-}: {
-  x: number;
-  y: number;
-  rows: string[];
-  size?: number;
-  dy?: number;
-}) {
-  return rows.map((line, i) => (
-    <Text key={i} x={x} y={y + i * dy} size={size} color={muted}>
-      {line}
-    </Text>
-  ));
-}
-function Box({
-  x,
-  y,
-  w,
-  h,
-  fill = '#FFFEFA',
-  stroke = '#D3DBCD',
-  r = 14,
-  ...props
-}: SVGProps<SVGRectElement> & { x: number; y: number; w: number; h: number; r?: number }) {
-  return <rect x={x} y={y} width={w} height={h} rx={r} fill={fill} stroke={stroke} {...props} />;
-}
-function Flow({
-  d,
-  id,
-  download = false,
-  arrow = true,
-  color,
-}: {
-  d: string;
-  id?: string;
-  download?: boolean;
-  arrow?: boolean;
-  color?: string;
-}) {
-  return (
-    <path
-      d={d}
-      fill="none"
-      stroke={color || (download ? blue : green)}
-      strokeWidth="2"
-      strokeLinejoin="round"
-      strokeLinecap="round"
-      strokeDasharray={download ? '6 5' : undefined}
-      markerEnd={arrow ? `url(#${id}-${download ? 'download' : 'flow'})` : undefined}
-    />
-  );
-}
-function Stage({
-  x,
-  number,
   title,
-  selected,
-  children,
+  note,
+  size = 14,
 }: {
   x: number;
-  number: number;
-  title: string;
-  selected: number;
-  children: ReactNode;
+  y: number;
+  title: ReactNode;
+  note: string;
+  size?: number;
 }) {
-  const current = selected === number - 1;
   return (
-    <g data-preparation-stage={number}>
-      <Box
-        x={x}
-        y={570}
-        w={350}
-        h={230}
-        fill={current ? '#EDF3E5' : undefined}
-        stroke={current ? green : undefined}
-        strokeWidth={current ? 2 : 1}
-      />
-      <circle cx={x + 37} cy="607" r="18" fill={current ? green : '#E7EFDC'} />
-      <Text
-        x={x + 37}
-        y={613}
-        size={17}
-        weight={600}
-        color={current ? '#FFFFFF' : ink}
-        textAnchor="middle"
-      >
-        {number}
-      </Text>
-      <Text x={x + 69} y={614} size={23} weight={600}>
+    <>
+      <text x={x} y={y} fontSize={size} fontWeight="700" fill={ink}>
         {title}
-      </Text>
-      {children}
+      </text>
+      <text x={x} y={y + (size > 14 ? 17 : 16)} fontSize="11.5" fill={muted}>
+        {note}
+      </text>
+    </>
+  );
+}
+function Source({
+  x,
+  y,
+  width,
+  height,
+  icon,
+  title,
+  note,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  icon: PreparationIconName;
+  title: string;
+  note: string;
+}) {
+  return (
+    <>
+      <rect x={x} y={y} width={width} height={height} rx="10" fill="#FFF" stroke={line} />
+      <Icon name={icon} x={x + 12} y={y + height / 2 - 11} size={22} color={muted} />
+      <Label x={x + 44} y={y + height / 2 - 3} title={title} note={note} />
+    </>
+  );
+}
+// A side input that joins the flow just above a step card.
+function Input({
+  y,
+  icon,
+  tone,
+  title,
+  note,
+  download = false,
+  marker,
+  faded,
+}: {
+  y: number;
+  icon: PreparationIconName;
+  tone: Tone;
+  title: string;
+  note: string;
+  download?: boolean;
+  marker: string;
+  faded: boolean;
+}) {
+  return (
+    <g opacity={faded ? 0.45 : 1}>
+      <rect
+        x="150"
+        y={y}
+        width="330"
+        height="40"
+        rx="20"
+        fill={tone.tint}
+        stroke={tone.soft}
+        strokeDasharray={download ? '5 4' : undefined}
+      />
+      <Icon name={icon} x={164} y={y + 10} size={20} color={tone.main} />
+      <Label x={194} y={y + 17} title={title} note={note} size={13} />
+      <path
+        d={`M300 ${y + 43}V${y + 61}`}
+        stroke={download ? tone.main : grey}
+        strokeWidth="2"
+        markerEnd={`url(#${marker}-${download ? 'download' : 'flow'})`}
+      />
     </g>
+  );
+}
+function Metric({
+  x,
+  value,
+  label,
+  small = false,
+}: {
+  x: number;
+  value: string;
+  label: string;
+  small?: boolean;
+}) {
+  return (
+    <>
+      <text x={x} y="101" fontSize={small ? 13 : 20} fontWeight="700" fill={ink}>
+        {value}
+      </text>
+      <text x={x} y="118" fontSize="12" fill={muted}>
+        {label}
+      </text>
+    </>
   );
 }
 
@@ -158,10 +162,9 @@ export function PreparationDiagram({
   const build = reference?.source?.build ?? genome?.build ?? '—';
   const modelName = (index.data?.model?.id ?? EMBEDDING_MODEL.id).split('/').at(-1)!;
   const example = genome?.kind === 'example';
-  // Fit the stages currently shown instead of reserving space for future nodes.
-  const diagramWidth = [800, 940, 1360][selected]!;
-  const catalogShift = selected === 0 ? 147 : 0;
-  const privacyX = selected === 2 ? 786 : diagramWidth - 330;
+  const state = (step: number) =>
+    step === selected ? 'current' : step < selected ? 'past' : 'later';
+  const arrowX = CARD.x + 58;
   const descriptions = [
     'The app uses the same prepared public reference as Genomewalk. It combines ClinVar’s variant classifications, condition names, review information and publication links with available gnomAD population frequencies. The reference is chosen for your genome build and downloaded to your browser. This step does not send your genome to ClinVar or gnomAD.',
     'The selected genome is compared with the reference inside your browser. We check that the genome location and allele agree, then keep records that pass the matching checks. The usable matches become the pool for later questions. Calls left out of that pool are marked with an asterisk and explained below; each answer uses a small selection of relevant matches.',
@@ -170,12 +173,12 @@ export function PreparationDiagram({
   return (
     <>
       <p className="preparation-description">{descriptions[selected]}</p>
-      <figure className="preparation-diagram">
+      <figure className="step-diagram" tabIndex={0} aria-label="Preparation flow diagram">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          width={diagramWidth}
-          height="946"
-          viewBox={`0 128 ${diagramWidth} 946`}
+          width={DIAGRAM_WIDTH}
+          height={HEIGHT}
+          viewBox={`0 0 ${DIAGRAM_WIDTH} ${HEIGHT}`}
           role="img"
           aria-labelledby={`${id}-title`}
           aria-describedby={`${id}-description`}
@@ -186,251 +189,163 @@ export function PreparationDiagram({
           </title>
           <desc id={`${id}-description`}>
             ClinVar annotations and gnomAD population frequencies are prepared into hosted public
-            reference files. Your browser loads {total} reference variants for {build}.
-            {selected > 0 &&
-              ` The selected genome is matched locally: ${count(counts?.matched)} usable matches and ${count(counts?.needsReview)} calls left out. Calls that fail matching checks stay out of search.`}
-            {selected > 1 &&
-              ` ${modelName} runs locally to build the search index: ${count(index.data?.count ?? index.data?.counts?.matched)} searchable records. Public model files download from Hugging Face; genome data stays in the browser.`}
+            reference files. Your browser loads {total} reference variants for {build}. The selected
+            genome is matched locally: {count(counts?.matched)} usable matches and{' '}
+            {count(counts?.needsReview)} calls left out. Calls that fail matching checks stay out of
+            search. {modelName} runs locally to build the search index:{' '}
+            {count(index.data?.count ?? index.data?.counts?.matched)} searchable records. Public
+            model files download from Hugging Face; genome data stays in the browser.
           </desc>
           <metadata>{iconLicense}</metadata>
           <defs>
-            {[
-              ['flow', green],
-              ['download', blue],
-            ].map(([name, color]) => (
-              <marker
-                key={name}
-                id={`${id}-${name}`}
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto"
-              >
-                <path
-                  d="M1 1L9 5L1 9"
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </marker>
-            ))}
+            <ArrowMarker id={`${id}-flow`} color={grey} />
+            <ArrowMarker id={`${id}-download`} color={tones.blue.main} />
           </defs>
-          <Box x={0} y={0} w={diagramWidth} h={1074} fill="#FBFAF6" stroke="#FBFAF6" r={0} />
 
-          <Box
-            x={44}
-            y={144}
-            w={diagramWidth - 88}
-            h={216}
-            fill="#F0F2ED"
-            stroke="#DDE2D7"
-            r={18}
-          />
-          <Text x={66} y={170} size={12} weight={600} color={muted} letterSpacing="1.6">
+          <rect x="8.5" y="16.5" width="483" height="156" rx="16" fill="#F5F6F8" stroke={line} />
+          <text x="26" y="40" fontSize="11" fontWeight="700" fill={muted} letterSpacing="1.4">
             PUBLIC RESOURCES
-          </Text>
-          <Box x={78} y={186} w={240} h={66} />
-          <Icon name="database" x={94} y={204} size={30} />
-          <Text x={137} y={213} size={18} weight={600}>
-            ClinVar
-          </Text>
-          <Text x={137} y={235} size={14} color={muted}>
-            Variant annotations
-          </Text>
-          <Box x={78} y={274} w={240} h={66} />
-          <Icon name="database" x={94} y={292} size={30} />
-          <Text x={137} y={301} size={18} weight={600}>
-            gnomAD
-          </Text>
-          <Text x={137} y={323} size={14} color={muted}>
-            Population frequencies
-          </Text>
-          <Flow d="M318 219H350V307H318" arrow={false} color="#A5B39D" />
-          <Flow id={id} d="M350 263H430" />
-          <Text x={386} y={245} size={12} color={muted} textAnchor="middle">
-            Prepare
-          </Text>
-          <Box x={432} y={213} w={300} h={100} />
-          <Icon name="server" x={450} y={233} size={38} />
-          <Text x={504} y={243} size={20} weight={600}>
-            Reference hosting
-          </Text>
-          <Text x={504} y={267} size={15} color={muted}>
-            Prepared public files
-          </Text>
-          <Text x={504} y={290} size={13} color={muted}>
-            Static hosting / CDN
-          </Text>
-
-          <Box
-            x={44}
-            y={402}
-            w={diagramWidth - 88}
-            h={580}
-            fill="#F2F6EC"
-            stroke="#AFBFA3"
-            r={18}
+          </text>
+          <Source
+            x={26}
+            y={52}
+            width={186}
+            height={48}
+            icon="database"
+            title="ClinVar"
+            note="Variant annotations"
           />
-          <Icon name="panels-top-left" x={66} y={418} size={31} />
-          <Text x={112} y={441} size={22} weight={600}>
+          <Source
+            x={26}
+            y={108}
+            width={186}
+            height={48}
+            icon="database"
+            title="gnomAD"
+            note="Population frequencies"
+          />
+          <path d="M212 76H232V132H212" fill="none" stroke={grey} strokeWidth="2" />
+          <path d="M232 104H260" stroke={grey} strokeWidth="2" markerEnd={`url(#${id}-flow)`} />
+          <Source
+            x={264}
+            y={70}
+            width={210}
+            height={68}
+            icon="server"
+            title="Reference hosting"
+            note="Prepared public files"
+          />
+
+          <rect x="8.5" y="196.5" width="483" height="620" rx="16" fill="#FAFBFC" stroke={line} />
+          <Icon name="panels-top-left" x={24} y={211} size={22} color={muted} />
+          <text x="56" y="228" fontSize="16" fontWeight="700" fill={ink}>
             Your browser
-          </Text>
-          <Icon name="shield-check" x={privacyX} y={421} size={22} />
-          <Text x={privacyX + 33} y={439} size={15} weight={600}>
+          </text>
+          <Icon
+            name="shield-check"
+            x={DIAGRAM_WIDTH - 180}
+            y={214}
+            size={16}
+            color={tones.green.main}
+          />
+          <text x={DIAGRAM_WIDTH - 24} y="227" textAnchor="end" fontSize="12" fill={muted}>
             Genome data stays here
-          </Text>
-          <path d={`M44 455H${diagramWidth - 44}`} stroke="#D4DFCB" />
-          <Flow id={id} d={`M582 313V382H360V480H${253 + catalogShift}V568`} download />
+          </text>
+          <path
+            d={`M290 141V${cardY[0] - 3}`}
+            stroke={tones.blue.main}
+            strokeWidth="2"
+            strokeDasharray="5 4"
+            markerEnd={`url(#${id}-download)`}
+          />
 
-          <g transform={`translate(${catalogShift} 0)`}>
-            <Stage x={78} number={1} title="Load the catalog" selected={selected}>
-              <Icon name="database" x={100} y={645} size={38} />
-              <Lines
-                x={155}
-                y={658}
-                rows={['ClinVar + gnomAD', 'Reference for this genome build']}
-                size={15}
-                dy={23}
-              />
-              <Text x={100} y={749} size={31} weight={600}>
-                {total}
-              </Text>
-              <Text x={100} y={778} size={14} color={muted}>
-                reference variants
-              </Text>
-              <Text x={286} y={749} size={24} weight={600}>
-                {build}
-              </Text>
-              <Text x={286} y={778} size={14} color={muted}>
-                genome build
-              </Text>
-            </Stage>
-            <Lines
-              x={78}
-              y={835}
-              rows={['Load the prepared reference for', 'the selected genome build.']}
+          <StepCard
+            y={cardY[0]}
+            number={1}
+            title="Load the catalog"
+            illustration="catalog"
+            tone={tones.blue}
+            state={state(0)}
+            status={catalog.status}
+            description={['ClinVar + gnomAD reference', 'for this genome build.']}
+          >
+            <Metric x={120} value={total} label="reference variants" />
+            <Metric x={300} value={build} label="genome build" />
+          </StepCard>
+
+          {[1, 2].map((step) => (
+            <path
+              key={step}
+              d={`M${arrowX} ${cardY[step - 1]! + CARD.height + 3}V${cardY[step]! - 3}`}
+              stroke={grey}
+              strokeWidth="2"
+              markerEnd={`url(#${id}-flow)`}
+              opacity={selected < step ? 0.45 : 1}
             />
-          </g>
+          ))}
+          <Input
+            y={396}
+            icon="dna"
+            tone={tones.coral}
+            title="Selected genome file"
+            note={example ? 'GIAB HG002 · public example' : 'Your file · read in this browser'}
+            marker={id}
+            faded={selected < 1}
+          />
+          <StepCard
+            y={cardY[1]}
+            number={2}
+            title="Match locally"
+            illustration="match"
+            tone={tones.coral}
+            state={state(1)}
+            status={matching.status}
+            description={['Compare location and allele;', 'check the file and genotypes.']}
+          >
+            <Metric x={120} value={count(counts?.matched)} label="usable matches" />
+            <Metric x={300} value={count(counts?.needsReview)} label="calls left out*" />
+          </StepCard>
 
-          {selected > 0 && (
-            <g>
-              <Box x={535} y={470} w={290} h={72} fill="#FBF2E9" stroke="#E2C9B7" r={12} />
-              <Icon name="dna" x={552} y={487} size={36} color="#A15D42" />
-              <Text x={603} y={498} size={18} weight={600}>
-                Selected genome file
-              </Text>
-              <Text x={603} y={521} size={12} color={muted}>
-                {example ? 'GIAB HG002 · public example' : 'Your file · read in this browser'}
-              </Text>
-              <Flow id={id} d="M680 542V568" />
-              <Flow id={id} d="M428 685H503" />
-              <Stage x={505} number={2} title="Match locally" selected={selected}>
-                <Icon name="shield-check" x={527} y={645} size={38} />
-                <Lines
-                  x={582}
-                  y={658}
-                  rows={['Location + allele comparison', 'File and genotype checks']}
-                  size={15}
-                  dy={23}
-                />
-                <Text x={527} y={749} size={31} weight={600}>
-                  {count(counts?.matched)}
-                </Text>
-                <Text x={527} y={778} size={14} color={muted}>
-                  usable matches
-                </Text>
-                <Text x={713} y={749} size={31} weight={600}>
-                  {count(counts?.needsReview)}
-                </Text>
-                <Text x={713} y={778} size={14} color={muted}>
-                  calls left out*
-                </Text>
-              </Stage>
-              <Lines
-                x={505}
-                y={835}
-                rows={[
-                  'Keep usable allele matches.',
-                  '* Calls that fail matching checks',
-                  'stay out of search.',
-                ]}
-              />
-            </g>
-          )}
+          <Input
+            y={604}
+            icon="cloud-download"
+            tone={tones.blue}
+            title="Embedding model files"
+            note="Downloaded from Hugging Face when needed"
+            download
+            marker={id}
+            faded={selected < 2}
+          />
+          <StepCard
+            y={cardY[2]}
+            number={3}
+            title="Build the index"
+            illustration="index"
+            tone={tones.violet}
+            state={state(2)}
+            status={index.status}
+            description={['A small local model embeds each', 'record so questions can find it.']}
+          >
+            <Metric
+              x={120}
+              value={count(index.data?.count ?? index.data?.counts?.matched)}
+              label="searchable records"
+            />
+            <Metric x={280} value={modelName} label="search model" small />
+          </StepCard>
 
-          {selected > 1 && (
-            <g>
-              <Box x={932} y={213} w={350} h={100} />
-              <Icon name="cloud-download" x={950} y={234} size={38} color={blue} />
-              <Text x={1004} y={243} size={20} weight={600}>
-                Model hosting
-              </Text>
-              <Text x={1004} y={267} size={15} color={muted}>
-                Hugging Face
-              </Text>
-              <Text x={1004} y={290} size={13} color={muted}>
-                Public embedding-model files
-              </Text>
-              <Flow id={id} d="M1107 313V568" download />
-              <Text x={1122} y={499} size={14} color={blue}>
-                Download model
-              </Text>
-              <Text x={1122} y={519} size={14} color={blue}>
-                when needed
-              </Text>
-              <Flow id={id} d="M855 685H930" />
-              <Stage x={932} number={3} title="Build the index" selected={selected}>
-                <Icon name="cpu" x={954} y={645} size={38} />
-                <Lines
-                  x={1009}
-                  y={658}
-                  rows={[modelName, 'Local embedding model']}
-                  size={15}
-                  dy={23}
-                />
-                <Icon name="search" x={956} y={729} size={28} />
-                <Text x={999} y={750} size={31} weight={600}>
-                  {count(index.data?.count ?? index.data?.counts?.matched)}
-                </Text>
-                <Text x={999} y={778} size={14} color={muted}>
-                  searchable records
-                </Text>
-              </Stage>
-              <Lines
-                x={932}
-                y={835}
-                rows={[
-                  'Turns descriptions into embeddings.',
-                  'The same model encodes questions',
-                  'to find related records by meaning.',
-                  'Runs locally through Transformers.js.',
-                ]}
-              />
-              {index.status === 'complete' && (
-                <Text x={932} y={959} size={15} weight={600}>
-                  Ready for private questions →
-                </Text>
-              )}
-            </g>
-          )}
-
-          <Text x={78} y={959} size={14} color={muted}>
+          <text x="12" y="840" fontSize="12" fill={muted}>
+            * Calls that fail matching checks stay out of search.
+          </text>
+          <text x="12" y="858" fontSize="12" fill={muted}>
             Saved matches and the prepared index can be reused.
-          </Text>
-          <Text x={48} y={1016} size={14} color={muted}>
-            {example ? 'Example: public GIAB HG002' : 'Selected genome'} · {build}. Counts reflect
-            the selected genome and catalog.
-          </Text>
-          <Text x={48} y={1043} size={13} color={muted}>
-            Dashed arrows: public downloads · Solid arrows: data flow
-          </Text>
-          <Text x={diagramWidth - 44} y={1043} size={12} color={muted} textAnchor="end">
+          </text>
+          <text x="12" y="876" fontSize="12" fill={muted}>
+            Dashed: public downloads · Solid: data flow
+          </text>
+          <text x={DIAGRAM_WIDTH - 12} y="876" fontSize="11" fill={muted} textAnchor="end">
             Icons: Lucide · ISC / MIT
-          </Text>
+          </text>
         </svg>
       </figure>
     </>

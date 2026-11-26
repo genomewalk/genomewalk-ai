@@ -508,6 +508,7 @@ export class EmbeddingsSession {
       data: {
         request: queryRequest,
         response: plan,
+        raw,
         catalogSummary: summary,
         ...historyBudget,
       },

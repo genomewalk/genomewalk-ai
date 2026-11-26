@@ -1,9 +1,10 @@
-import type { ReactNode, PointerEvent } from 'react';
+import type { CSSProperties, ReactNode, PointerEvent } from 'react';
 import type { JourneyStep, StepStatus } from '../lib/session-types.ts';
 
 interface DisplayStep extends JourneyStep {
   title?: string;
   detail: ReactNode;
+  accent?: string;
 }
 interface PanelHeading {
   eyebrow: string;
@@ -102,7 +103,7 @@ function StepPanel({ steps, selected, onSelect, onClose, question, heading }: Pa
       ref={dialog}
       id={panelId}
       className={`step-panel${dragging ? ' is-resizing' : ''}`}
-      style={{ width }}
+      style={{ width, '--step-accent': step.accent } as CSSProperties}
       aria-labelledby={heading ? `${titleId} ${stepLabelId}` : titleId}
       onClose={(event) => {
         if (!event.currentTarget.open) onClose();
@@ -165,7 +166,7 @@ function StepPanel({ steps, selected, onSelect, onClose, question, heading }: Pa
               <div className="step-panel-heading-meta">
                 <p className="eyebrow">{heading.eyebrow}</p>
                 <p className="step-panel-current" id={stepLabelId}>
-                  STEP {selected + 1} OF {steps.length} · {step.label}
+                  Step {selected + 1} of {steps.length} · {step.label}
                 </p>
               </div>
             ) : (
@@ -185,8 +186,26 @@ function StepPanel({ steps, selected, onSelect, onClose, question, heading }: Pa
             <Icon name="close" />
           </button>
         </header>
+        <nav className="step-tabs" aria-label="Steps">
+          {steps.map((item, index) => (
+            <button
+              key={item.id}
+              className={`is-${item.status}`}
+              aria-current={index === selected ? 'step' : undefined}
+              onClick={() => onSelect(index)}
+            >
+              <span aria-hidden="true">{index + 1}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
         <div className="step-panel-body" key={step.id}>
-          {question && <p className="step-panel-question">{question}</p>}
+          {question && (
+            <p className="step-panel-question">
+              <span>Your question</span>
+              {question}
+            </p>
+          )}
           <p className={`step-panel-status is-${step.status}`}>
             <span />
             {STEP_STATUS[step.status]}
