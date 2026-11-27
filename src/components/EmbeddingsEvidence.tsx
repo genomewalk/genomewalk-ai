@@ -80,9 +80,7 @@ function RecordReference({ record }: { record: ReferenceRecord }) {
           </h3>
           {record.gene && !!identifiers.length && <SourceLinks sources={identifiers} />}
         </div>
-        <span className="input-record-origin">
-          {record.origin === 'earlier' ? 'Earlier input' : 'This question'}
-        </span>
+        <span className="input-record-origin">This question</span>
       </header>
       <p className="input-record-location">{record.variant}</p>
       <RecordFacts fields={primary} />

@@ -131,7 +131,6 @@ test('fresh answer inputs contain only the current candidates and preserve sourc
   const c = context([rows[3]!]);
   assert.equal(c.messages.length, 2);
   assert.equal(c.recordReference.records.length, 1);
-  assert.equal(c.recordReference.records[0]!.origin, 'current');
   const record = buildAnswerReference(c.recordReference).records[0]!;
   assert.ok(record.description.includes(c.recordReference.records[0]!.variant));
   assert.ok(sourceLinks(record).length);

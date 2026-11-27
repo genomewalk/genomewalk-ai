@@ -66,7 +66,6 @@ test('semantic ranking scores the full pool without boosting classification or r
     rankSemantic(hits, changed).map((hit) => hit.index),
     ordered.map((hit) => hit.index),
   );
-  assert.ok(ordered.every((hit) => hit.score === hit.similarity));
   assert.deepEqual({ records, hits }, before);
 });
 
@@ -170,8 +169,8 @@ test('each question searches the full pool, answers once and preserves history',
   assert.equal(follow!.context!.historyTurns, 1);
   assert.equal(follow!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
   assert.equal(
-    follow!.context!.evidence!.earlierMatches.length,
-    0,
+    follow!.context!.recordReference.records.length,
+    follow!.context!.included,
     'Previous source payloads are not appended to history',
   );
   plan = { query: 'SYNTHETIC29' };

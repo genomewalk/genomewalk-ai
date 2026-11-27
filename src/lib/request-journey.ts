@@ -2,21 +2,19 @@ import type { Journey, JourneyStep, StepStatus } from './session-types.ts';
 export function createEmbeddingsJourney(now = Date.now()): Journey {
   return {
     startedAt: now,
-    localOnly: true,
     steps: (
       [
-        ['catalog', 'Local catalog', 'Local server → browser'],
-        ['matching', 'Genome matching', 'On this device'],
-        ['index', 'Embedding index', 'Browser worker · local'],
-        ['query', 'Understand the question', 'Local answer model'],
-        ['semantic', 'Find relevant matches', 'On this device'],
-        ['context', 'Input to local model', 'On this device'],
-        ['answer', 'Local answer', 'On this device'],
+        ['catalog', 'Local catalog'],
+        ['matching', 'Genome matching'],
+        ['index', 'Embedding index'],
+        ['query', 'Understand the question'],
+        ['semantic', 'Find relevant matches'],
+        ['context', 'Input to local model'],
+        ['answer', 'Local answer'],
       ] as const
-    ).map(([id, label, location]) => ({
+    ).map(([id, label]) => ({
       id,
       label,
-      location,
       status: 'pending',
       summary: 'Not started',
     })),

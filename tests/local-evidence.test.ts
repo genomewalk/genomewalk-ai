@@ -41,21 +41,14 @@ const row = {
   },
 };
 
-test('local JSON separates observed genotype from complete catalog annotations and preserves frequency units', () => {
+test('a match record separates the observed genotype from catalog annotations', () => {
   const evidence = matchForLocalModel(row, 'GRCh38');
   assert.deepEqual(evidence.genotype.alleles, ['C', 'T']);
   assert.equal(evidence.genotype.zygosity, 'heterozygous');
   assert.equal(evidence.genotype.matchedAlleleCopies, 1);
-  assert.equal(evidence.genotype.quality.variantQuality, 222.14);
   assert.equal(evidence.clinvar.reviewStatus, row.reviewstatus);
   assert.equal(evidence.clinvar.conditions, row.conditions);
-  assert.equal(evidence.populationFrequency.overallAlleleFrequency, 0.00008);
-  assert.equal(evidence.populationFrequency.maximumPopulationAlleleFrequency, 0.0002);
   assert.equal(evidence.populationFrequency.maximumPopulation, 'sas');
-  assert.equal(evidence.populationFrequency.units, 'allele_fraction_not_percent_or_personal_risk');
-  assert.equal(evidence.populationFrequency.discordanceP, null);
-  assert.deepEqual(evidence.sources.pubmedIds, ['12345', '67890']);
-  assert.equal(evidence.sources.publicationContentProvided, false);
 });
 
 test('source URLs use catalog identifiers, including the normalized gnomAD key', () => {
@@ -65,7 +58,6 @@ test('source URLs use catalog identifiers, including the normalized gnomAD key',
     evidence.sources.gnomadUrl,
     'https://gnomad.broadinstitute.org/variant/1-9-AC-A?dataset=gnomad_r4',
   );
-  assert.equal(evidence.populationFrequency.variantKey, '1-9-AC-A');
   assert.equal(
     evidence.variant.position,
     10,
@@ -75,7 +67,6 @@ test('source URLs use catalog identifiers, including the normalized gnomAD key',
     { pmid: '12345', url: 'https://pubmed.ncbi.nlm.nih.gov/12345/' },
     { pmid: '67890', url: 'https://pubmed.ncbi.nlm.nih.gov/67890/' },
   ]);
-  assert.equal(evidence.sources.publicationContentProvided, false);
 });
 
 test('missing or malformed source identifiers do not become guessed or injected links', () => {
@@ -96,14 +87,16 @@ test('missing or malformed source identifiers do not become guessed or injected 
     );
     assert.equal(evidence.sources.clinvarUrl, null);
     assert.equal(evidence.sources.gnomadUrl, null);
-    assert.deepEqual(evidence.sources.pubmedIds, []);
     assert.deepEqual(evidence.sources.publications, []);
   }
   const mixed = matchForLocalModel(
     { ...row, pmids: '12345,0, -1, 67890,https://example.com' },
     'GRCh38',
   );
-  assert.deepEqual(mixed.sources.pubmedIds, ['12345', '67890']);
+  assert.deepEqual(
+    mixed.sources.publications.map((publication) => publication.pmid),
+    ['12345', '67890'],
+  );
   for (const key of [
     '1-0-C-T',
     '23-10-C-T',
@@ -113,18 +106,13 @@ test('missing or malformed source identifiers do not become guessed or injected 
   ]) {
     const evidence = matchForLocalModel({ ...row, gnomadkey: key }, 'GRCh38');
     assert.equal(evidence.sources.gnomadUrl, null);
-    assert.equal(
-      evidence.populationFrequency.variantKey,
-      key,
-      'Unsupported keys remain inspectable',
-    );
   }
   assert.equal(matchForLocalModel(row, 'unsupported').sources.gnomadUrl, null);
   // @ts-expect-error Missing keys must not create links.
   assert.equal(matchForLocalModel({ ...row, gnomadkey: null }, 'GRCh38').sources.gnomadUrl, null);
 });
 
-test('missing reference values stay unknown; zero is preserved and genotype labels follow observed alleles', () => {
+test('zero review stars are preserved and genotype labels follow observed alleles', () => {
   const missing = matchForLocalModel(
     {
       ...row,
@@ -137,10 +125,6 @@ test('missing reference values stay unknown; zero is preserved and genotype labe
     },
     'GRCh38',
   );
-  assert.equal(missing.populationFrequency.overallAlleleFrequency, null);
-  assert.equal(missing.populationFrequency.maximumPopulationAlleleFrequency, null);
-  assert.equal(missing.populationFrequency.overallAlleleNumber, null);
-  assert.equal(missing.populationFrequency.overallAlleleCount, 0);
   assert.equal(missing.clinvar.reviewStars, 0);
   assert.deepEqual(missing.genotype.alleles, ['A', 'T']);
   assert.equal(missing.genotype.zygosity, 'heterozygous');

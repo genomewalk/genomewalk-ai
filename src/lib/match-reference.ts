@@ -80,10 +80,8 @@ export function compactMatch(row: MatchedRow) {
       ? { conflictingClassifications: clinvar.conflictingClassifications.split('|').map(readable) }
       : {}),
     conditions: condList(readable(clinvar.conditions) ?? ''),
-    // Genomewalk's prepared VCF catalog keeps CLNSIG and CLNDN separately.
-    // No per-condition assertion mapping is supplied. Never zip the lists,
-    // infer a Cartesian product, or invent current/somatic/germline assertions.
-    conditionClassifications: null,
+    // Genomewalk's prepared VCF catalog keeps CLNSIG and CLNDN separately, with no
+    // per-condition mapping. Never zip the lists or infer a Cartesian product.
     review: `${stars}: ${readable(clinvar.reviewStatus) ?? 'review status not supplied'}.`,
     frequency: {
       overall:

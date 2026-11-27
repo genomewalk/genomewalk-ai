@@ -192,10 +192,8 @@ export interface RecordField {
 }
 export interface ReferenceRecord {
   id: string;
-  origin: string;
   gene: string | null;
   variant: string;
-  conditionClassifications: null;
   fields: RecordField[];
 }
 export interface RecordReference {

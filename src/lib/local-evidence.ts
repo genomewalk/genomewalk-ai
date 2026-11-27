@@ -36,8 +36,8 @@ export function alleleFraction(value: CatalogRow['af']) {
 // normalized GRCh38 key, never the uploaded file’s coordinate or build.
 const gnomadKeyPattern = /^(?:[1-9]|1\d|2[0-2]|X|Y)-[1-9]\d*-[ACGT]+-[ACGT]+$/;
 
-// Explicit local-only schema: observations and reference annotations stay
-// separate. Missing values are null, never a fabricated zero or clinical claim.
+// The facts an answer record is built from. Observations and reference annotations
+// stay separate; missing values are null, never a fabricated zero or clinical claim.
 export function matchForLocalModel(row: MatchedRow, build: string) {
   const call = row.call;
   const alleles = Array.isArray(call.alleles) ? [...call.alleles] : null;
@@ -50,11 +50,8 @@ export function matchForLocalModel(row: MatchedRow, build: string) {
           : 'heterozygous'
         : 'unknown';
   const variationId = text(row.variationid);
-  const pmids = list(row.pmids, ',').filter(positiveId);
-  const rsIds = refSnpIds(row.rsids);
   const gnomadKey = text(row.gnomadkey);
-  const match = {
-    citation: row.citation,
+  return {
     variant: {
       build,
       chromosome: row.chrom,
@@ -62,56 +59,25 @@ export function matchForLocalModel(row: MatchedRow, build: string) {
       referenceAllele: row.ref,
       matchedAllele: row.alt,
       gene: text(row.gene),
-      rsIds: text(row.rsids),
-      hgvs: text(row.hgvs),
     },
     genotype: {
-      gt: call.gt,
       alleles,
       matchedAlleleCopies: call.copies,
-      ploidy: call.ploidy ?? null,
       zygosity: zygosity as 'haploid_call' | 'homozygous' | 'heterozygous' | 'unknown',
-      phased: typeof call.gt === 'string' ? call.gt.includes('|') : null,
-      quality: {
-        recordFilter: text(call.filter),
-        sampleFilter: text(call.sampleFilter),
-        depth: call.dp ?? null,
-        genotypeQuality: call.gq ?? null,
-        variantQuality: call.qual ?? null,
-        alleleDepths: call.alleleDepths ?? null,
-      },
-      vcfLineNumber: call.line ?? null,
-      duplicateRecordCount: row.recordCount ?? 1,
-      sourceVcfFields: call.sourceVcfFields ?? null,
     },
     clinvar: {
-      variationId,
-      alleleId: text(row.alleleid),
       classification: text(row.classification),
-      classificationCode: text(row.sig),
       conflictingClassifications: text(row.conflictingclassifications),
       conditions: text(row.conditions),
-      conditionMedgenIds: text(row.conditionmedgenids),
       reviewStars: number(row.stars),
       reviewStatus: text(row.reviewstatus),
     },
-    populationFrequency: {
-      source: 'gnomAD',
-      units: 'allele_fraction_not_percent_or_personal_risk',
-      overallAlleleFrequency: alleleFraction(row.af),
-      overallAlleleCount: number(row.gnomadac),
-      overallAlleleNumber: number(row.an),
-      maximumPopulationAlleleFrequency: number(row.afmax),
-      maximumPopulation: text(row.grp),
-      variantKey: gnomadKey,
-      filter: text(row.gnomadfilter),
-      discordanceP: number(row.gnomaddiscordancep),
-    },
+    populationFrequency: { maximumPopulation: text(row.grp) },
     sources: {
       clinvarUrl: positiveId(variationId)
         ? `https://www.ncbi.nlm.nih.gov/clinvar/variation/${variationId}/`
         : null,
-      dbsnp: rsIds.map((id) => ({
+      dbsnp: refSnpIds(row.rsids).map((id) => ({
         label: id,
         url: `https://www.ncbi.nlm.nih.gov/snp/${id}`,
       })),
@@ -119,15 +85,9 @@ export function matchForLocalModel(row: MatchedRow, build: string) {
         ['GRCh37', 'GRCh38'].includes(build) && gnomadKeyPattern.test(gnomadKey ?? '')
           ? `https://gnomad.broadinstitute.org/variant/${encodeURIComponent(gnomadKey!)}?dataset=gnomad_r4`
           : null,
-      pubmedIds: pmids,
-      publications: pmids.map((pmid) => ({
-        pmid,
-        url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
-      })),
-      publicationContentProvided: false,
-      catalogReleaseDate: text(row.releasedate),
-      citationDate: text(row.citationdate),
+      publications: list(row.pmids, ',')
+        .filter(positiveId)
+        .map((pmid) => ({ pmid, url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` })),
     },
   };
-  return match;
 }

@@ -46,16 +46,11 @@ export function rankSemantic<T extends RankingFields>(hits: SemanticHit[], recor
       seen.add(hit.index);
       const row = records[hit.index]!;
       const priority = catalogPriority(row);
-      return {
-        index: hit.index,
-        similarity: hit.similarity,
-        priority,
-        score: hit.similarity,
-      };
+      return { index: hit.index, similarity: hit.similarity, priority };
     })
     .sort(
       (a, b) =>
-        b.score - a.score ||
+        b.similarity - a.similarity ||
         (records[a.index]!.rowNumber ?? a.index) - (records[b.index]!.rowNumber ?? b.index) ||
         a.index - b.index,
     )

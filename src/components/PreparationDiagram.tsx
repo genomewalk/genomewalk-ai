@@ -158,7 +158,7 @@ export function PreparationDiagram({
   ];
   const reference = catalog.data;
   const counts = matching.data?.counts;
-  const total = count(reference?.total ?? reference?.catalogRecords);
+  const total = count(reference?.total);
   const build = reference?.source?.build ?? genome?.build ?? '—';
   const modelName = (index.data?.model?.id ?? EMBEDDING_MODEL.id).split('/').at(-1)!;
   const example = genome?.kind === 'example';

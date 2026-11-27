@@ -21,7 +21,6 @@ export interface RankedHit {
   rank: number;
   priority: ReturnType<typeof catalogPriority>;
   similarity?: number;
-  score?: number;
 }
 export interface RankedRecord extends RankedHit {
   record: ReturnType<typeof compactMatch>;
@@ -31,27 +30,16 @@ export type AnswerContext = Omit<ReturnType<typeof buildEmbeddingsContext>, 'mes
 export interface StepData extends Partial<AnswerContext> {
   source?: CatalogSource;
   total?: number;
-  catalogRecords?: number;
-  reused?: boolean;
-  storage?: string;
-  savedAt?: number;
-  sentRemotely?: boolean;
   counts?: MatchResult['stats'];
-  limitations?: string;
-  cache?: CacheInfo;
   model?: { id: string; revision: string; dtype: string; device: string };
   count?: number;
   dimensions?: number;
-  documentTokenLimit?: number;
-  note?: string;
   request?: ModelRequest;
   response?: SearchPlan;
   catalogSummary?: string;
   query?: string;
-  formula?: string;
   rows?: RankedRecord[];
   scores?: RankedHit[];
-  previewLimit?: number;
   messages?: ModelMessage[];
   raw?: string;
   finishReason?: ModelChunk['choices'][number]['finish_reason'];
@@ -60,7 +48,6 @@ export interface StepData extends Partial<AnswerContext> {
 export interface JourneyStep {
   id: StepId;
   label: string;
-  location: string;
   status: StepStatus;
   summary?: string;
   startedAt?: number;
@@ -70,7 +57,6 @@ export interface JourneyStep {
 export interface Journey {
   startedAt: number;
   endedAt?: number;
-  localOnly: boolean;
   status?: StepStatus;
   steps: JourneyStep[];
 }

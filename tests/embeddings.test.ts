@@ -236,7 +236,6 @@ test('separate source lists never become invented condition-specific classificat
     conflictingclassifications: '',
   });
   assert.deepEqual(reference.conditions, ['Condition A', 'Condition B', 'Condition C']);
-  assert.equal(reference.conditionClassifications, null);
   assert.equal(reference.clinvar, '“Likely pathogenic; protective” for the T allele.');
   assert.equal(Object.hasOwn(reference, 'conflictingClassifications'), false);
 });
@@ -367,12 +366,10 @@ test('fresh search preserves supplied source facts without prior conversation', 
     const c = buildEmbeddingsContext('New topic', rows.slice(2), result, profile, plan);
     assert.equal(c.historyTurns, 0);
     assert.equal(c.messages.length, 2);
-    assert.deepEqual(c.evidence.earlierMatches, []);
     assert.deepEqual(
       c.recordReference.records.map((r) => r.gene),
       ['SYNTHETIC3', 'SYNTHETIC4', 'SYNTHETIC5'],
     );
-    assert.ok(c.recordReference.records.every((r) => r.origin === 'current'));
     assert.ok(c.inputBytes <= c.inputByteLimit);
   }
 });

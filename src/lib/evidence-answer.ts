@@ -54,10 +54,8 @@ export function buildReferenceRecord(
   ];
   return {
     id,
-    origin: 'current',
     gene: record.gene,
     variant: record.variant,
-    conditionClassifications: record.conditionClassifications,
     fields,
   };
 }

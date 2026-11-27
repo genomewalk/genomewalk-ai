@@ -30,7 +30,7 @@ import { buildEmbeddingsContext } from './embeddings-context.ts';
 import { compactMatch } from './match-reference.ts';
 import { rankSemantic, rankCatalogForReview } from './evidence-ranking.ts';
 import { createEmbeddingsJourney, updateJourney, finishJourney } from './request-journey.ts';
-import { EMBEDDING_MODEL, RETRIEVAL } from '../config/embeddings.ts';
+import { EMBEDDING_MODEL } from '../config/embeddings.ts';
 import { buildCatalogSummary } from './catalog-summary.ts';
 import { parseLocalQuery, buildLocalQueryContext } from './local-query.ts';
 import { PREVIEW_LIMIT } from '../config/evidence-ranking.ts';
@@ -191,6 +191,8 @@ export class EmbeddingsSession {
     await this.prepare();
     return selection === this.selection && !this.disposed;
   }
+  // Matches the genome, indexes its records for search and summarizes them. Reuses
+  // the in-memory result, then matches saved in this browser, before scanning again.
   async prepareIndex(signal?: AbortSignal, id?: number) {
     const config = await this.readConfig(signal);
     if (config.catalog.phase !== 'ready')
@@ -205,16 +207,12 @@ export class EmbeddingsSession {
       );
     this.update({ config });
     if (this.prepared?.identity === key) {
+      const { source, total, result } = this.prepared;
       for (const step of ['catalog', 'matching', 'index'])
         this.step(id, step, {
           status: 'complete',
-          summary: `Reused the complete in-memory index · ${this.prepared.result.matches.length.toLocaleString()} matches`,
-          data: {
-            reused: true,
-            catalogRecords: this.prepared.total,
-            source: this.prepared.source,
-            counts: this.prepared.result.stats,
-          },
+          summary: `Reused the complete in-memory index · ${result.matches.length.toLocaleString()} matches`,
+          data: { source, total, counts: result.stats },
         });
       return this.prepared;
     }
@@ -223,97 +221,9 @@ export class EmbeddingsSession {
     const report = (message: string) => {
       if (!signal?.aborted) this.update({ progressText: message });
     };
-    const cacheIdentity = matchCacheIdentity(config);
-    const cached = this.matchCache.read(cacheIdentity);
-    this.update({ matchCacheInfo: cached.info });
-    let source;
-    let total;
-    let result;
-    if (cached.entry) {
-      ({ source, total, result } = cached.entry);
-      const matchCacheInfo = {
-        ...cached.info,
-        status: 'restored',
-        message: `${result.matches.length.toLocaleString()} saved matches restored from this browser. Catalog download and genome scan skipped.`,
-      };
-      this.update({ matchCacheInfo });
-      this.step(id, 'catalog', {
-        status: 'complete',
-        summary: 'Reference data reused from this browser',
-        data: {
-          source,
-          total,
-          reused: true,
-          storage: 'localStorage',
-          savedAt: cached.info.savedAt,
-          sentRemotely: false,
-        },
-      });
-      this.step(id, 'matching', {
-        status: 'complete',
-        summary: 'Saved matches reused · no new scan needed',
-        data: {
-          counts: result.stats,
-          limitations: result.limitations,
-          storage: 'localStorage',
-          savedAt: cached.info.savedAt,
-        },
-      });
-    } else {
-      this.step(id, 'catalog', { status: 'running', summary: 'Loading the ClinVar reference…' });
-      const loaded = await loadCatalogKeys(config, {
-        signal,
-        fetchImpl: this.fetch,
-        onProgress: report,
-      });
-      signal?.throwIfAborted();
-      ({ source, total } = loaded);
-      this.step(id, 'catalog', {
-        status: 'complete',
-        summary: 'ClinVar reference ready',
-        data: { source, total, sentRemotely: false },
-      });
-      this.step(id, 'matching', {
-        status: 'running',
-        summary: 'Comparing your genome with ClinVar…',
-      });
-      report(
-        this.genome.kind === 'example'
-          ? 'Loading the public GIAB example (42 MB on first use), then matching locally…'
-          : 'Matching the full catalog against your selected file…',
-      );
-      result = await this.matcher({
-        config,
-        file: this.file,
-        candidates: loaded.candidates,
-        lookup: loaded.lookup,
-        signal,
-        onProgress: ({ bytes, records }) =>
-          report(
-            `Matching locally · ${Math.min(100, Math.round((100 * bytes) / config.localGenome.bytes))}% read · ${records.toLocaleString()} records`,
-          ),
-      });
-      signal?.throwIfAborted();
-      report('Reading matched annotations through Genomewalk’s verified catalog stream…');
-      result = await hydrateGenomewalkMatches(result, loaded.catalogue, signal, (p) =>
-        report(`Reading matched annotations · ${Math.round(p * 100)}%`),
-      );
-      signal?.throwIfAborted();
-      // Publish only a complete verified result for files that stayed unchanged.
-      const current = await this.readConfig(signal);
-      signal?.throwIfAborted();
-      if (identity(current) !== key)
-        throw new Error(
-          'The genome or catalog changed during matching. Refresh local files and prepare again.',
-        );
-      const matchCacheInfo = this.matchCache.write(cacheIdentity, { source, total, result });
-      this.update({ matchCacheInfo });
-      this.step(id, 'matching', {
-        status: 'complete',
-        summary: 'Genome comparison complete',
-        data: { counts: result.stats, limitations: result.limitations, cache: matchCacheInfo },
-      });
-    }
+    const { source, total, result } =
+      this.restoreSavedMatches(config, id) ??
+      (await this.matchGenome(config, key, report, signal, id));
     const documents = result.matches.map(searchDocument);
     this.updateMessage(id, { result });
     this.step(id, 'index', {
@@ -325,12 +235,7 @@ export class EmbeddingsSession {
     this.step(id, 'index', {
       status: 'complete',
       summary: `${index.count.toLocaleString()} records indexed · ${index.dimensions} dimensions per token · cached in memory`,
-      data: {
-        model: EMBEDDING_MODEL,
-        ...index,
-        documentTokenLimit: RETRIEVAL.documentTokens,
-        note: 'Public annotation text only is embedded. Search documents use the model’s token limit; answer evidence uses original annotations. Token vectors stay in memory; verified matches are saved locally for refreshes.',
-      },
+      data: { model: EMBEDDING_MODEL, ...index },
     });
     this.prepared = {
       identity: key,
@@ -346,6 +251,96 @@ export class EmbeddingsSession {
       excludedCount: result.issues.length,
     });
     return this.prepared;
+  }
+  // Matches saved in this browser for the same genome, reference and matcher version.
+  private restoreSavedMatches(config: GenomeConfig, id?: number) {
+    const cached = this.matchCache.read(matchCacheIdentity(config));
+    this.update({ matchCacheInfo: cached.info });
+    if (!cached.entry) return null;
+    const { source, total, result } = cached.entry;
+    this.update({
+      matchCacheInfo: {
+        ...cached.info,
+        status: 'restored',
+        message: `${result.matches.length.toLocaleString()} saved matches restored from this browser. Catalog download and genome scan skipped.`,
+      },
+    });
+    this.step(id, 'catalog', {
+      status: 'complete',
+      summary: 'Reference data reused from this browser',
+      data: { source, total },
+    });
+    this.step(id, 'matching', {
+      status: 'complete',
+      summary: 'Saved matches reused · no new scan needed',
+      data: { counts: result.stats },
+    });
+    return cached.entry;
+  }
+  // Loads the reference, scans the genome for exact matches, reads their annotations
+  // and saves the verified result in this browser.
+  private async matchGenome(
+    config: GenomeConfig,
+    key: string,
+    report: (message: string) => void,
+    signal?: AbortSignal,
+    id?: number,
+  ) {
+    this.step(id, 'catalog', { status: 'running', summary: 'Loading the ClinVar reference…' });
+    const loaded = await loadCatalogKeys(config, {
+      signal,
+      fetchImpl: this.fetch,
+      onProgress: report,
+    });
+    signal?.throwIfAborted();
+    const { source, total } = loaded;
+    this.step(id, 'catalog', {
+      status: 'complete',
+      summary: 'ClinVar reference ready',
+      data: { source, total },
+    });
+    this.step(id, 'matching', {
+      status: 'running',
+      summary: 'Comparing your genome with ClinVar…',
+    });
+    report(
+      this.genome.kind === 'example'
+        ? 'Loading the public GIAB example (42 MB on first use), then matching locally…'
+        : 'Matching the full catalog against your selected file…',
+    );
+    const matched = await this.matcher({
+      config,
+      file: this.file,
+      candidates: loaded.candidates,
+      lookup: loaded.lookup,
+      signal,
+      onProgress: ({ bytes, records }) =>
+        report(
+          `Matching locally · ${Math.min(100, Math.round((100 * bytes) / config.localGenome.bytes))}% read · ${records.toLocaleString()} records`,
+        ),
+    });
+    signal?.throwIfAborted();
+    report('Reading matched annotations through Genomewalk’s verified catalog stream…');
+    const result = await hydrateGenomewalkMatches(matched, loaded.catalogue, signal, (p) =>
+      report(`Reading matched annotations · ${Math.round(p * 100)}%`),
+    );
+    signal?.throwIfAborted();
+    // Publish only a complete verified result for files that stayed unchanged.
+    const current = await this.readConfig(signal);
+    signal?.throwIfAborted();
+    if (identity(current) !== key)
+      throw new Error(
+        'The genome or catalog changed during matching. Refresh local files and prepare again.',
+      );
+    this.update({
+      matchCacheInfo: this.matchCache.write(matchCacheIdentity(config), { source, total, result }),
+    });
+    this.step(id, 'matching', {
+      status: 'complete',
+      summary: 'Genome comparison complete',
+      data: { counts: result.stats },
+    });
+    return { source, total, result };
   }
   prepare() {
     if (this.preparation) return this.preparation;
@@ -537,11 +532,9 @@ export class EmbeddingsSession {
       summary: `${matches.length.toLocaleString()} matches considered · ${ordering}`,
       data: {
         query: plan.query,
-        formula: ordering,
         total: matches.length,
         rows,
         scores: ordered,
-        previewLimit: PREVIEW_LIMIT,
       },
     });
     return ordered.map((hit) => matches[hit.index]!);
