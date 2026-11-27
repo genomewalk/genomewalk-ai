@@ -7,7 +7,7 @@ import type { SearchOperation } from './worker-protocol.ts';
 import { AutoModel, AutoTokenizer, env } from '@huggingface/transformers';
 import wasmURL from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url';
 import wasmModuleURL from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url';
-import { EMBEDDING_MODEL, RETRIEVAL } from '../config/embeddings.ts';
+import { EMBEDDING_MODEL, RETRIEVAL } from '../config/search.ts';
 import { colbertInputs, colbertVectors, maxSim } from './colbert.ts';
 
 env.allowLocalModels = false;

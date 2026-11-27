@@ -9,7 +9,7 @@ interface Pending {
   onProgress: (message: string) => void;
 }
 // Dedicated CPU/WASM worker avoids competing with the answer model's GPU cache.
-export class EmbeddingsClient implements SearchClient {
+export class SearchWorkerClient implements SearchClient {
   workerFactory: () => Worker;
   worker: Worker | null;
   nextId: number;
@@ -17,7 +17,7 @@ export class EmbeddingsClient implements SearchClient {
   hasIndex: boolean;
   constructor({
     workerFactory = () =>
-      new Worker(new URL('embeddings.worker.ts', import.meta.url), { type: 'module' }),
+      new Worker(new URL('search.worker.ts', import.meta.url), { type: 'module' }),
   } = {}) {
     this.workerFactory = workerFactory;
     this.worker = null;

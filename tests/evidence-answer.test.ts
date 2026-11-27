@@ -2,7 +2,7 @@ import { buildCatalogSummary } from '../src/lib/catalog-summary.ts';
 import type { SearchPlan } from '../src/lib/types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
+import { buildAnswerContext } from '../src/lib/answer-context.ts';
 import { buildLocalQueryContext } from '../src/lib/local-query.ts';
 import { buildAnswerReference } from '../src/lib/evidence-answer.ts';
 import { ANSWER_PROMPT } from '../src/prompts/answer.ts';
@@ -20,7 +20,7 @@ const sourceLinks = (record: ReturnType<typeof buildAnswerReference>['records'][
   );
 
 const context = (candidates = rows) =>
-  buildEmbeddingsContext(fixture.question, candidates, result, LOCAL_MODELS[0]!, plan);
+  buildAnswerContext(fixture.question, candidates, result, LOCAL_MODELS[0]!, plan);
 
 test('answer candidates preserve every source field and link without duplicate URLs', () => {
   const c = context([rows[0]!, rows[1]!, rows[3]!]);
@@ -95,15 +95,10 @@ test('publication links and absence remain source facts, never paper contents', 
 test('prepared citation labels reach the answer and inspector without changing evidence or URLs', () => {
   const candidates = [{ ...rows[0]!, pmids: '12345,67890' }];
   const original = context(candidates);
-  const labeled = buildEmbeddingsContext(
-    fixture.question,
-    candidates,
-    result,
-    LOCAL_MODELS[0]!,
-    plan,
-    { publicationLabels: { '12345': 'Example et al., Journal 2020', '67890': null } },
-  );
-  assert.deepEqual(labeled.evidence, original.evidence);
+  const labeled = buildAnswerContext(fixture.question, candidates, result, LOCAL_MODELS[0]!, plan, {
+    publicationLabels: { '12345': 'Example et al., Journal 2020', '67890': null },
+  });
+  assert.deepEqual(labeled.consideredRows, original.consideredRows);
   const reference = buildAnswerReference(labeled.recordReference);
   const publications = labeled.recordReference.records[0]!.fields.find(
     (field) => field.label === 'Publications',
@@ -140,10 +135,10 @@ test('answers share one prompt and use model defaults while query generation sta
   const baseline = context();
   const history = [{ question: 'Earlier question', answer: 'Earlier answer' }];
   for (const model of LOCAL_MODELS) {
-    const c = buildEmbeddingsContext(fixture.question, rows, result, model, plan);
+    const c = buildAnswerContext(fixture.question, rows, result, model, plan);
     assert.deepEqual(c.messages, baseline.messages);
     assert.deepEqual(c.generation, baseline.generation);
-    const overview = buildEmbeddingsContext('Overview', rows, result, model, {
+    const overview = buildAnswerContext('Overview', rows, result, model, {
       overview: true,
     });
     assert.equal(
@@ -153,8 +148,8 @@ test('answers share one prompt and use model defaults while query generation sta
     for (const answerContext of [
       c,
       overview,
-      buildEmbeddingsContext('Explain it', rows, result, model, plan, { history }),
-      buildEmbeddingsContext('What is DNA?', rows, result, model, plan, { history }),
+      buildAnswerContext('Explain it', rows, result, model, plan, { history }),
+      buildAnswerContext('What is DNA?', rows, result, model, plan, { history }),
     ]) {
       assert.equal(answerContext.messages[0]!.content, ANSWER_PROMPT);
       const request = localModelRequest(model, answerContext.messages, answerContext.generation);

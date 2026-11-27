@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { embeddingsSession as session } from '../lib/embeddings-session.ts';
+import { chatSession as session } from '../lib/chat-session.ts';
 import { localModelSession } from '../lib/local-model-session.ts';
 import { BrandMark, Icon } from './Icons.tsx';
 import { ModelSelector } from './ModelSelector.tsx';
@@ -8,7 +8,7 @@ import { MessageList } from './MessageList.tsx';
 import { ChatInput } from './ChatInput.tsx';
 import { GenomeSetup, PreparationProgress } from './GenomeSetup.tsx';
 
-export function EmbeddingsChat() {
+export function GenomeChat() {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const local = useSyncExternalStore(localModelSession.subscribe, localModelSession.getSnapshot);
   const [draft, setDraft] = useState('');

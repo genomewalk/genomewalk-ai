@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scanVcf } from '../src/lib/vcf-matcher.ts';
 import { hydrateGenomewalkMatches } from '../src/lib/local-catalog.ts';
-import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
+import { buildAnswerContext } from '../src/lib/answer-context.ts';
 import { buildAnswerReference } from '../src/lib/evidence-answer.ts';
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
 
@@ -88,14 +88,9 @@ async function matched(lines: string) {
 const plan: SearchPlan = { query: 'cancer-related variants' };
 test('answer receives complete conversation without genome-source metadata', () => {
   const previous = [{ question: 'Earlier question', answer: 'Earlier answer' }];
-  const c = buildEmbeddingsContext(
-    'Explain it',
-    [],
-    { build: 'GRCh38', matches: [], issues: [] },
-    LOCAL_MODELS[0]!,
-    plan,
-    { history: previous },
-  );
+  const c = buildAnswerContext('Explain it', [], { matches: [] }, LOCAL_MODELS[0]!, plan, {
+    history: previous,
+  });
   assert.deepEqual(c.messages.slice(1, -1), [
     { role: 'user', content: 'Earlier question' },
     { role: 'assistant', content: 'Earlier answer' },
@@ -104,13 +99,7 @@ test('answer receives complete conversation without genome-source metadata', () 
   assert.doesNotMatch(JSON.stringify(c.messages), /genomeSource/);
 });
 const contextFor = (result: MatchResult) =>
-  buildEmbeddingsContext(
-    'Cancer-related variants?',
-    result.matches,
-    result,
-    LOCAL_MODELS[0]!,
-    plan,
-  );
+  buildAnswerContext('Cancer-related variants?', result.matches, result, LOCAL_MODELS[0]!, plan);
 
 test('same-position FH alleles stay distinct through matching, annotation hydration, context and rendered links; absent NOP10 stays absent', async () => {
   const result = await matched(vcf('chr1', 241500602, 'T', 'TGAGA', '0/1'));
@@ -144,7 +133,7 @@ test('answer requests preserve synthetic genotype facts without genome-source me
     [2, 1],
   );
   for (const profile of LOCAL_MODELS) {
-    const context = buildEmbeddingsContext(
+    const context = buildAnswerContext(
       'Cancer-related variants?',
       result.matches,
       result,

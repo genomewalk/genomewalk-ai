@@ -27,7 +27,7 @@ import { checkWebGPU, explainError } from './model.ts';
 import { findModel } from './custom-models.ts';
 import { localModelRequest } from './local-model-request.ts';
 
-// Model selection, GPU lifetime and isolated inference. Conversation state lives in EmbeddingsSession.
+// Model selection, GPU lifetime and isolated inference. Conversation state lives in ChatSession.
 export class LocalModelSession {
   checkSupport: () => Promise<string>;
   createEngine: (options: EngineOptions) => Promise<ModelEngine>;

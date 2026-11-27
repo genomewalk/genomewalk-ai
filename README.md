@@ -70,10 +70,11 @@ The chat renders the model’s Markdown. The model can retrieve an unrelated rec
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `src/components/`                              | Genome intake, chat, source evidence and step diagrams                                     |
 | `src/styles/`                                  | Chat layout, journey panels and genome intake styling                                      |
-| `src/lib/embeddings-session.ts`                | Preparation and question lifecycle; cancellation and conversation history                  |
+| `src/lib/chat-session.ts`                      | Preparation and question lifecycle; cancellation and conversation history                  |
 | `src/lib/genome-source.ts`, `genome.worker.ts` | Local file identification, hashing and matching                                            |
 | `src/lib/local-catalog.ts`, `public-files.ts`  | Static references, validation and deployment paths                                         |
-| `src/lib/embeddings.worker.ts`                 | Local ColBERT index; token preparation and MaxSim scoring live in `src/lib/colbert.ts`     |
+| `src/lib/search.worker.ts`                     | Local ColBERT index; token preparation and MaxSim scoring live in `src/lib/colbert.ts`     |
+| `src/lib/local-query.ts`, `answer-context.ts`  | The two model inputs: writing the search query, and answering within the context budget    |
 | `src/lib/evidence-ranking.ts`                  | Shared field-based retrieval policy                                                        |
 | `src/lib/evidence-answer.ts`                   | Original record fields and compact answer descriptions with source links                   |
 | `src/lib/local-model-session.ts`, `webllm.ts`  | Model selection, worker lifetime and inference                                             |

@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { getModelProfile, LOCAL_MODELS } from '../src/config/models/index.ts';
-import { QUERY_GENERATION } from '../src/config/embeddings.ts';
+import { QUERY_GENERATION } from '../src/config/search.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -330,7 +330,7 @@ test('inference streams unmodified chunks and resets KV state between explicit r
   await collect(f.session.completePrivate([{ role: 'user', content: 'Second request' }]));
   assert.deepEqual(f.requests[1]!.messages, [{ role: 'user', content: 'Second request' }]);
   assert.equal(f.calls.reset, 4);
-  assert.equal('history' in f.session, false, 'Conversation history belongs to EmbeddingsSession');
+  assert.equal('history' in f.session, false, 'Conversation history belongs to ChatSession');
 });
 
 test('fixed routing settings do not carry into subsequent answer requests', async () => {

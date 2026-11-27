@@ -2,7 +2,7 @@ import type { ChatMessage } from '../lib/session-types.ts';
 import { memo, useEffect, useLayoutEffect, useRef } from 'react';
 import { Icon } from './Icons.tsx';
 import { MarkdownResponse, ResponseSource } from './MarkdownResponse.ts';
-import { EmbeddingsEvidence } from './EmbeddingsEvidence.tsx';
+import { RequestJourney } from './RequestJourney.tsx';
 
 const outputBudget = (message: ChatMessage) =>
   Math.max(
@@ -77,7 +77,7 @@ const ConversationMessage = memo(function ConversationMessage({
         {isAssistant && <Icon name="sparkle" size={15} />}
         <span>{isAssistant ? 'Genomewalk · local catalog review' : 'You'}</span>
       </div>
-      {isAssistant && <EmbeddingsEvidence message={message} />}
+      {isAssistant && <RequestJourney message={message} />}
       {isAssistant && showBubble && (
         <div className="local-answer-heading">
           <Icon name="chip" size={17} />

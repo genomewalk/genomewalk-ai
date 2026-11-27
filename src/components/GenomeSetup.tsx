@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Journey, EmbeddingsState } from '../lib/session-types.ts';
+import type { Journey, ChatState } from '../lib/session-types.ts';
 import type { GenomeSource } from '../lib/types.ts';
 import { useRef, useState } from 'react';
 import { chooseGenomeFile } from '../lib/genome-source.ts';
@@ -44,7 +44,7 @@ export function GenomeSetup({
   onStop,
   onContinue,
 }: {
-  state: EmbeddingsState;
+  state: ChatState;
   onSelect: (file: File | null) => Promise<void>;
   onRetry: () => void;
   onStop: () => void;

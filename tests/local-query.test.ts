@@ -5,14 +5,14 @@ import test from 'node:test';
 import { ANSWER_PROMPT } from '../src/prompts/answer.ts';
 import assert from 'node:assert/strict';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
-import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
+import { ChatSession } from '../src/lib/chat-session.ts';
 import { parseLocalQuery, buildLocalQueryContext } from '../src/lib/local-query.ts';
 import {
   LOCAL_MIN_RESPONSE_TOKENS,
   LOCAL_TEMPLATE_RESERVE_TOKENS,
 } from '../src/config/local-inference.ts';
 import { QUERY_SCHEMA } from '../src/config/query-schema.ts';
-import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
+import { buildAnswerContext } from '../src/lib/answer-context.ts';
 import { fitConversation } from '../src/lib/conversation-context.ts';
 import { LOCAL_MODELS } from '../src/config/models/index.ts';
 
@@ -66,7 +66,7 @@ async function harness(
       }),
   });
   await local.initialize();
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     local,
     search: fakeSearch(async (op) => {
       operations.push(op);
@@ -154,10 +154,10 @@ test('general questions and clarifications use the same search path, preserving 
 test('an oversized previous answer is omitted with its question, never partially copied', () => {
   const profile = { ...LOCAL_MODELS[0]!, contextWindowTokens: 8000 };
   const previous = [{ question: 'Earlier topic', answer: 'x'.repeat(9000) }];
-  const c = buildEmbeddingsContext(
+  const c = buildAnswerContext(
     'Explain it',
     [],
-    { build: 'GRCh38', matches: [], issues: [] },
+    { matches: [] },
     profile,
     { query: 'explanation' },
     { history: previous },
@@ -194,10 +194,9 @@ test('both query planning and answering retain complete conversation across topi
   await h.session.send('Overview');
   const first = h.session.state.messages.at(-1)!;
   assert.deepEqual(
-    first.context!.evidence.matches.map((r) => r.gene),
+    first.context!.recordReference.records.map((r) => r.gene),
     ['FIXTURE30', 'FIXTURE1', 'FIXTURE2'],
   );
-  assert.equal(first.context!.evidence.coverage.currentTurn.retrieval, 'catalog_review');
   assert.match(h.requests[1]!.messages.at(-1)!.content, /Record order: catalog review priority/);
   await h.session.send('Tell me more about that variant');
   assert.deepEqual(h.operations, ['score']);
@@ -322,11 +321,14 @@ test('a supplied topic triggers search regardless of question wording, with the 
     await h.session.send(question);
     assert.equal(h.session.state.error, null);
     assert.deepEqual(h.operations, ['score']);
-    assert.equal(h.session.state.messages.at(-1)!.context!.evidence!.matches[0]!.gene, 'FIXTURE1');
     assert.equal(
-      h.session.state.messages.at(-1)!.context!.evidence!.coverage.currentTurn.retrievedCandidates,
-      30,
+      h.session.state.messages.at(-1)!.context!.recordReference.records[0]!.gene,
+      'FIXTURE1',
     );
+    {
+      const context = h.session.state.messages.at(-1)!.context!;
+      assert.equal(context.included + context.omitted, 30);
+    }
     assert.equal(h.requests.length, 2);
     const summary = buildCatalogSummary(rows);
     const plannerMessages = h.requests[0]!.messages;
@@ -426,7 +428,7 @@ test('topic search uses similarity alone before admitting five candidates', asyn
     [0, 1, 2, 3, 4],
   );
   assert.deepEqual(
-    message!.context!.evidence!.matches.map((record) => record.gene),
+    message!.context!.recordReference.records.map((record) => record.gene),
     records.slice(0, 5).map((row) => row.gene),
   );
   assert.ok(

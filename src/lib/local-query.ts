@@ -1,7 +1,7 @@
 import type { ModelProfile, SearchPlan } from './types.ts';
 import type { ConversationTurn } from './conversation-context.ts';
-import { LOCAL_QUERY_PROMPT } from '../prompts/embeddings.ts';
-import { QUERY_GENERATION } from '../config/embeddings.ts';
+import { LOCAL_QUERY_PROMPT } from '../prompts/query.ts';
+import { QUERY_GENERATION } from '../config/search.ts';
 import { fitConversation } from './conversation-context.ts';
 
 export function parseLocalQuery(text: string): SearchPlan {

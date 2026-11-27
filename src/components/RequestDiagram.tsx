@@ -1,6 +1,6 @@
 import type { ChatMessage, JourneyStep, StepId } from '../lib/session-types.ts';
 import { useId } from 'react';
-import { PreparationIcon as Icon } from './PreparationIcons.tsx';
+import { DiagramIcon as Icon } from './DiagramIcons.tsx';
 import {
   ArrowMarker,
   CARD,

@@ -1,5 +1,5 @@
 import type { Journey, JourneyStep, StepStatus } from './session-types.ts';
-export function createEmbeddingsJourney(now = Date.now()): Journey {
+export function createJourney(now = Date.now()): Journey {
   return {
     startedAt: now,
     steps: (

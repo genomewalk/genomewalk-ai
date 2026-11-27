@@ -1,6 +1,6 @@
 import { Tensor } from '@huggingface/transformers';
 import type { PreTrainedTokenizer } from '@huggingface/transformers';
-import { RETRIEVAL } from '../config/embeddings.ts';
+import { RETRIEVAL } from '../config/search.ts';
 
 // Checkpoint defaults from answerdotai/answerai-colbert-small-v1/artifact.metadata.
 // Matches Sentence Transformers' MultiVectorEncoder: query expansion, document

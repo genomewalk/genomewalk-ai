@@ -8,7 +8,7 @@ import type {
   MatchedRow,
 } from './types.ts';
 import type {
-  EmbeddingsState,
+  ChatState,
   ChatMessage,
   JourneyStep,
   StepStatus,
@@ -20,17 +20,17 @@ import type { LocalModelSession } from './local-model-session.ts';
 
 import { readCompletion } from './local-model-request.ts';
 import { localModelSession } from './local-model-session.ts';
-import { EmbeddingsClient } from './embeddings-client.ts';
+import { SearchWorkerClient } from './search-client.ts';
 import { matchLocalGenome, identifyLocalGenome } from './genome-client.ts';
 import { chooseGenomeFile } from './genome-source.ts';
 import { EXAMPLE_GENOME } from '../config/example-genome.ts';
 import { loadCatalogKeys, hydrateGenomewalkMatches } from './local-catalog.ts';
 import { searchDocument } from './semantic-search.ts';
-import { buildEmbeddingsContext } from './embeddings-context.ts';
+import { buildAnswerContext } from './answer-context.ts';
 import { compactMatch } from './match-reference.ts';
 import { rankSemantic, rankCatalogForReview } from './evidence-ranking.ts';
-import { createEmbeddingsJourney, updateJourney, finishJourney } from './request-journey.ts';
-import { EMBEDDING_MODEL } from '../config/embeddings.ts';
+import { createJourney, updateJourney, finishJourney } from './request-journey.ts';
+import { EMBEDDING_MODEL } from '../config/search.ts';
 import { buildCatalogSummary } from './catalog-summary.ts';
 import { parseLocalQuery, buildLocalQueryContext } from './local-query.ts';
 import { PREVIEW_LIMIT } from '../config/evidence-ranking.ts';
@@ -64,7 +64,7 @@ const identity = (config: GenomeConfig) =>
     config.localGenome,
   ]);
 
-export class EmbeddingsSession {
+export class ChatSession {
   fetch: Fetcher;
   publications: PublicationCatalogue;
   local: NonNullable<SessionOptions['local']>;
@@ -81,7 +81,7 @@ export class EmbeddingsSession {
   nextId: number;
   history: ConversationTurn[];
   prepared: PreparedIndex | null;
-  state: EmbeddingsState;
+  state: ChatState;
   controller: AbortController | null = null;
   preparation: Promise<void> | null = null;
   constructor({
@@ -90,7 +90,7 @@ export class EmbeddingsSession {
     matcher = matchLocalGenome,
     identify = identifyLocalGenome,
     genomeSource = EXAMPLE_GENOME,
-    search = new EmbeddingsClient(),
+    search = new SearchWorkerClient(),
     matchCache = new MatchCache(),
   }: SessionOptions = {}) {
     this.fetch = fetchImpl;
@@ -116,7 +116,7 @@ export class EmbeddingsSession {
       switching: false,
       stopping: false,
       genome: genomeSource,
-      preparationJourney: createEmbeddingsJourney(),
+      preparationJourney: createJourney(),
       config: null,
       messages: [],
       error: null,
@@ -132,7 +132,7 @@ export class EmbeddingsSession {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
-  update(patch: Partial<EmbeddingsState>) {
+  update(patch: Partial<ChatState>) {
     if (this.disposed) return;
     this.state = { ...this.state, ...patch };
     this.listeners.forEach((fn) => fn());
@@ -353,7 +353,7 @@ export class EmbeddingsSession {
       activity: 'preparing',
       phase: 'checking',
       error: null,
-      preparationJourney: createEmbeddingsJourney(),
+      preparationJourney: createJourney(),
       progressText: 'Preparing local search…',
     });
     this.preparation = (async () => {
@@ -437,7 +437,7 @@ export class EmbeddingsSession {
           content: '',
           status: 'streaming',
           model: lease.model,
-          journey: createEmbeddingsJourney(),
+          journey: createJourney(),
         },
       ],
     });
@@ -555,7 +555,7 @@ export class EmbeddingsSession {
       .load(ranked.slice(0, recordLimit(plan)).flatMap((row) => (row.pmids ?? '').split(',')))
       .catch(() => ({}));
     signal.throwIfAborted();
-    const context = buildEmbeddingsContext(question, ranked, prepared.result, lease.model, plan, {
+    const context = buildAnswerContext(question, ranked, prepared.result, lease.model, plan, {
       publicationLabels,
       history: this.history,
       summary: prepared.summary,
@@ -633,7 +633,7 @@ export class EmbeddingsSession {
         indexReady: false,
         matchCount: 0,
         excludedCount: 0,
-        preparationJourney: createEmbeddingsJourney(),
+        preparationJourney: createJourney(),
         matchCacheInfo: this.matchCache.clear(),
       });
     }
@@ -649,5 +649,5 @@ export class EmbeddingsSession {
     this.listeners.clear();
   }
 }
-export const embeddingsSession = new EmbeddingsSession();
-if (import.meta.hot) import.meta.hot.dispose(() => embeddingsSession.dispose());
+export const chatSession = new ChatSession();
+if (import.meta.hot) import.meta.hot.dispose(() => chatSession.dispose());

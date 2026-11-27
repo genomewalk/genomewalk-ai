@@ -77,15 +77,15 @@ const icons = {
   ),
 };
 
-export type PreparationIconName = keyof typeof icons;
-export function PreparationIcon({
+export type DiagramIconName = keyof typeof icons;
+export function DiagramIcon({
   name,
   x,
   y,
   size = 32,
   color = '#587D53',
 }: {
-  name: PreparationIconName;
+  name: DiagramIconName;
   x: number;
   y: number;
   size?: number;

@@ -14,10 +14,10 @@ import type { ConversationTurn } from './conversation-context.ts';
 import { buildReferenceRecord, buildAnswerReference } from './evidence-answer.ts';
 import type { PublicationLabels } from '../vendor/genomewalk/catalogues/publication-format.ts';
 
-export function buildEmbeddingsContext(
+export function buildAnswerContext(
   question: string,
   rows: MatchedRow[],
-  result: Pick<MatchResult, 'build' | 'matches' | 'issues'>,
+  result: Pick<MatchResult, 'matches'>,
   profile: ModelProfile,
   plan: SearchPlan,
   {
@@ -35,7 +35,6 @@ export function buildEmbeddingsContext(
   const limit = recordLimit(plan);
   if (!Number.isInteger(maxNewRecords) || maxNewRecords < 1 || maxNewRecords > limit)
     throw new Error(`New-record limit must be an integer from 1 to ${limit}.`);
-  const matches: ReturnType<typeof compactMatch>[] = [];
   const records: ReferenceRecord[] = [];
   const consideredRows: { citation: string; gene?: string; status: string }[] = [];
   const fit = (candidates: ReferenceRecord[], turns: ConversationTurn[]) =>
@@ -52,13 +51,15 @@ export function buildEmbeddingsContext(
 
   // Give complete records priority over conversation history.
   for (const row of rows.slice(0, maxNewRecords)) {
-    const match = compactMatch(row);
     let status = 'included';
     try {
-      const record = buildReferenceRecord(match, `v${records.length + 1}`, publicationLabels);
+      const record = buildReferenceRecord(
+        compactMatch(row),
+        `v${records.length + 1}`,
+        publicationLabels,
+      );
       fit([...records, record], []);
       records.push(record);
-      matches.push(match);
     } catch {
       status = 'context_budget';
     }
@@ -68,23 +69,8 @@ export function buildEmbeddingsContext(
   return {
     ...fit(records, history),
     recordReference: { records },
-    evidence: {
-      build: result.build ?? 'GRCh38',
-      coverage: {
-        catalogMatches: result.matches.length,
-        unresolvedCalls: result.issues.length,
-        currentTurn: {
-          retrieval: plan.query ? 'semantic_search' : 'catalog_review',
-          retrievedCandidates: rows.length,
-          included: matches.length,
-          omittedFromShortlist: rows.length - matches.length,
-        },
-      },
-      note: 'Only selected exact matches in this curated catalog are included. Inheritance, phase across variants and personal prognosis have not been assessed. Publications are links only.',
-      matches,
-    },
-    included: matches.length,
-    omitted: rows.length - matches.length,
+    included: records.length,
+    omitted: rows.length - records.length,
     maxNewRecords,
     consideredRows,
   };

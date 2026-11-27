@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import type { Journey, JourneyStep } from '../lib/session-types.ts';
 import type { GenomeSource } from '../lib/types.ts';
-import type { PreparationIconName } from './PreparationIcons.tsx';
+import type { DiagramIconName } from './DiagramIcons.tsx';
 import type { Tone } from './DiagramParts.tsx';
 import { useId } from 'react';
-import { EMBEDDING_MODEL } from '../config/embeddings.ts';
+import { EMBEDDING_MODEL } from '../config/search.ts';
 import iconLicense from '../assets/lucide-license.txt?raw';
-import { PreparationIcon as Icon } from './PreparationIcons.tsx';
+import { DiagramIcon as Icon } from './DiagramIcons.tsx';
 import {
   ArrowMarker,
   CARD,
@@ -62,7 +62,7 @@ function Source({
   y: number;
   width: number;
   height: number;
-  icon: PreparationIconName;
+  icon: DiagramIconName;
   title: string;
   note: string;
 }) {
@@ -86,7 +86,7 @@ function Input({
   faded,
 }: {
   y: number;
-  icon: PreparationIconName;
+  icon: DiagramIconName;
   tone: Tone;
   title: string;
   note: string;

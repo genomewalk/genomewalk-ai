@@ -11,7 +11,7 @@ import type {
 } from './types.ts';
 import type { compactMatch } from './match-reference.ts';
 import type { catalogPriority } from './evidence-ranking.ts';
-import type { buildEmbeddingsContext } from './embeddings-context.ts';
+import type { buildAnswerContext } from './answer-context.ts';
 import type { CacheInfo } from './match-cache.ts';
 
 export type StepStatus = 'pending' | 'running' | 'complete' | 'skipped' | 'error' | 'stopped';
@@ -26,7 +26,7 @@ export interface RankedRecord extends RankedHit {
   record: ReturnType<typeof compactMatch>;
   searchText: string;
 }
-export type AnswerContext = Omit<ReturnType<typeof buildEmbeddingsContext>, 'messages'>;
+export type AnswerContext = Omit<ReturnType<typeof buildAnswerContext>, 'messages'>;
 export interface StepData extends Partial<AnswerContext> {
   source?: CatalogSource;
   total?: number;
@@ -82,7 +82,7 @@ export interface PreparedIndex {
   documents: string[];
   summary: string;
 }
-export interface EmbeddingsState {
+export interface ChatState {
   phase: 'idle' | 'checking' | 'ready' | 'stopped' | 'error';
   busy: boolean;
   activity: 'preparing' | 'answering' | null;

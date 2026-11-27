@@ -5,10 +5,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rankSemantic } from '../src/lib/evidence-ranking.ts';
 import { RECORD_LIMIT } from '../src/config/evidence-answer.ts';
-import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
+import { ChatSession } from '../src/lib/chat-session.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
 import { ANSWER_PROMPT } from '../src/prompts/answer.ts';
-import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
+import { buildAnswerContext } from '../src/lib/answer-context.ts';
 import { getModelProfile } from '../src/config/models/index.ts';
 
 const records = Array.from({ length: 30 }, (_, index) => ({
@@ -131,7 +131,7 @@ test('each question searches the full pool, answers once and preserves history',
     createEngine: async () => engine,
   });
   await local.initialize();
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     local,
     search: fakeSearch(async (operation) => {
       operations.push(operation);
@@ -151,8 +151,11 @@ test('each question searches the full pool, answers once and preserves history',
   assert.equal(requests[1]!.response_format, undefined);
   assert.equal(first!.content, 'The supplied records list this condition.');
   assert.equal(JSON.parse(requests[1]!.messages.at(-1)!.content.split('\n')[1]!).length, 5);
-  assert.equal(first!.context!.evidence!.coverage.currentTurn.retrievedCandidates, 30);
-  assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
+  {
+    const context = first!.context!;
+    assert.equal(context.included + context.omitted, 30);
+  }
+  assert.equal(first!.context!.recordReference.records[0]!.gene, 'SYNTHETIC0');
   assert.equal(
     first!.journey!.steps.some((step) => String(step.id) === 'ranking'),
     false,
@@ -167,7 +170,7 @@ test('each question searches the full pool, answers once and preserves history',
   const follow = session.state.messages.at(-1)!;
   assert.equal(session.state.error, null);
   assert.equal(follow!.context!.historyTurns, 1);
-  assert.equal(follow!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
+  assert.equal(follow!.context!.recordReference.records[0]!.gene, 'SYNTHETIC0');
   assert.equal(
     follow!.context!.recordReference.records.length,
     follow!.context!.included,
@@ -175,7 +178,10 @@ test('each question searches the full pool, answers once and preserves history',
   );
   plan = { query: 'SYNTHETIC29' };
   await session.send('Whole pool');
-  assert.equal(session.state.messages.at(-1)!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC0');
+  assert.equal(
+    session.state.messages.at(-1)!.context!.recordReference.records[0]!.gene,
+    'SYNTHETIC0',
+  );
   plan = { query: 'general question' };
   await session.send('General question');
   assert.equal(session.state.messages.at(-1)!.context!.historyTurns, 3);
@@ -187,7 +193,7 @@ test('each question searches the full pool, answers once and preserves history',
 test('a small context omits whole candidates and stays within the topic limit', () => {
   const plan: SearchPlan = { query: 'synthetic topic' };
   const profile = { ...getModelProfile('qwen3.5-9b'), contextWindowTokens: 9000 };
-  const c = buildEmbeddingsContext('Question', records, result, profile, plan);
+  const c = buildAnswerContext('Question', records, result, profile, plan);
   assert.ok(c.included < RECORD_LIMIT.topic);
   assert.ok(c.consideredRows.some((row) => row.status === 'context_budget'));
   assert.ok(c.inputBytes <= c.inputByteLimit);
@@ -201,7 +207,7 @@ test('a third record exceeding the context budget is omitted whole without takin
     { ...records[2]!, conditions: 'Condition '.repeat(5000) },
     records[3]!,
   ];
-  const context = buildEmbeddingsContext(
+  const context = buildAnswerContext(
     'Review',
     candidates,
     result,
@@ -214,7 +220,7 @@ test('a third record exceeding the context budget is omitted whole without takin
   assert.equal(context.consideredRows[2]!.status, 'context_budget');
   assert.equal(context.consideredRows.length, 3);
   assert.deepEqual(
-    context.evidence.matches.map((record) => record.gene),
+    context.recordReference.records.map((record) => record.gene),
     ['SYNTHETIC0', 'SYNTHETIC1'],
   );
   assert.ok(context.inputBytes <= context.inputByteLimit);

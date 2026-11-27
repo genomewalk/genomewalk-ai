@@ -93,7 +93,7 @@ function RecordReference({ record }: { record: ReferenceRecord }) {
   );
 }
 
-export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
+export function RequestJourney({ message }: { message: ChatMessage }) {
   const { journey, result, context } = message;
   if (!journey || !message.model) return null;
   const steps = Object.fromEntries(journey.steps.map((step) => [step.id, step])) as Record<

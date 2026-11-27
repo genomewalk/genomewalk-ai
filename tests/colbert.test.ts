@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Tensor } from '@huggingface/transformers';
 import { colbertInputs, colbertVectors, maxSim } from '../src/lib/colbert.ts';
-import { RETRIEVAL } from '../src/config/embeddings.ts';
+import { RETRIEVAL } from '../src/config/search.ts';
 
 // Invented token sequences: no network or downloaded weights in unit tests.
 const vocab: Record<string, number> = {

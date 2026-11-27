@@ -12,10 +12,10 @@ import { readFile } from 'node:fs/promises';
 import { bgzfBytes } from './helpers/bgzf.ts';
 import { identifyGenome } from '../src/lib/genome-source.ts';
 import { LocalModelSession } from '../src/lib/local-model-session.ts';
-import { EmbeddingsSession } from '../src/lib/embeddings-session.ts';
+import { ChatSession } from '../src/lib/chat-session.ts';
 import { searchDocument } from '../src/lib/semantic-search.ts';
 import { loadCatalogKeys, hydrateGenomewalkMatches } from '../src/lib/local-catalog.ts';
-import { buildEmbeddingsContext } from '../src/lib/embeddings-context.ts';
+import { buildAnswerContext } from '../src/lib/answer-context.ts';
 import { LOCAL_MODELS, getModelProfile } from '../src/config/models/index.ts';
 import { scanVcf } from '../src/lib/vcf-matcher.ts';
 import { MatchCache } from '../src/lib/match-cache.ts';
@@ -176,7 +176,7 @@ test('readable input preserves actual evidence and every source link without int
   ])
     assert.equal(field in compact, false);
   for (const profile of LOCAL_MODELS) {
-    const context = buildEmbeddingsContext(
+    const context = buildAnswerContext(
       'Review hearing',
       [...rows].reverse(),
       result,
@@ -184,12 +184,12 @@ test('readable input preserves actual evidence and every source link without int
       plan,
     );
     assert.equal(context.included, 5);
-    assert.equal(context.evidence.matches[0]!.gene, 'SYNTHETIC5');
+    assert.equal(context.recordReference.records[0]!.gene, 'SYNTHETIC5');
     assert.ok(context.inputBytes <= context.inputByteLimit);
     assert.ok(!JSON.stringify(context.messages).includes('SENTINEL'));
     assert.equal(
       context.messages[0]!.content,
-      buildEmbeddingsContext('Review hearing', rows, result, LOCAL_MODELS[0]!, plan).messages[0]!
+      buildAnswerContext('Review hearing', rows, result, LOCAL_MODELS[0]!, plan).messages[0]!
         .content,
     );
   }
@@ -242,19 +242,19 @@ test('separate source lists never become invented condition-specific classificat
 
 test('topic and overview limits preserve rank and allow a smaller shortlist', () => {
   const profile = getModelProfile('qwen3.5-9b');
-  const topic = buildEmbeddingsContext('Compare', rows, result, profile, plan);
-  const overview = buildEmbeddingsContext('Overview', rows, result, profile, { overview: true });
-  const two = buildEmbeddingsContext('Compare', rows, result, profile, plan, { maxNewRecords: 2 });
+  const topic = buildAnswerContext('Compare', rows, result, profile, plan);
+  const overview = buildAnswerContext('Overview', rows, result, profile, { overview: true });
+  const two = buildAnswerContext('Compare', rows, result, profile, plan, { maxNewRecords: 2 });
   assert.equal(topic.maxNewRecords, 5);
   assert.equal(topic.included, 5);
   assert.equal(overview.maxNewRecords, 3);
   assert.equal(overview.included, 3);
   assert.equal(two.included, 2);
-  assert.deepEqual(topic.evidence.matches.slice(0, 2), two.evidence.matches);
+  assert.deepEqual(topic.recordReference.records.slice(0, 2), two.recordReference.records);
   assert.equal(topic.omitted, rows.length - 5);
   assert.throws(
     () =>
-      buildEmbeddingsContext(
+      buildAnswerContext(
         'Overview',
         rows,
         result,
@@ -267,7 +267,7 @@ test('topic and overview limits preserve rank and allow a smaller shortlist', ()
   for (const maxNewRecords of [0, 6, 10, 2.5, '2']) {
     assert.throws(
       // @ts-expect-error Invalid limits from untyped input.
-      () => buildEmbeddingsContext('Compare', rows, result, profile, plan, { maxNewRecords }),
+      () => buildAnswerContext('Compare', rows, result, profile, plan, { maxNewRecords }),
       /New-record limit/,
     );
   }
@@ -322,31 +322,26 @@ test('field descriptions keep calls, classification conflicts and unknown review
 test('context reserves room for whole records before fitting complete conversation turns', () => {
   const profile = getModelProfile('qwen3-4b');
   const huge = { ...rows[0]!, conditions: 'Condition '.repeat(5000) };
-  const context = buildEmbeddingsContext(
-    'Review',
-    [huge, ...rows.slice(1)],
-    result,
-    profile,
-    plan,
-    { maxNewRecords: 3 },
-  );
+  const context = buildAnswerContext('Review', [huge, ...rows.slice(1)], result, profile, plan, {
+    maxNewRecords: 3,
+  });
   assert.equal(context.consideredRows[0]!.status, 'context_budget');
   assert.equal(context.included, 2);
   assert.ok(
-    !context.evidence.matches.some((r) => r.gene === 'SYNTHETIC4'),
+    !context.recordReference.records.some((r) => r.gene === 'SYNTHETIC4'),
     'No backfill outside the three-record shortlist',
   );
   const previous = [
     { question: 'Verified earlier question', answer: 'UNVERIFIED_ANSWER', records: [] },
   ];
-  const followup = buildEmbeddingsContext('Which one?', rows, result, profile, plan, {
+  const followup = buildAnswerContext('Which one?', rows, result, profile, plan, {
     history: previous,
   });
   assert.equal(followup.historyTurns, 1);
   assert.equal(followup.inputByteLimit, profile.contextWindowTokens - 4096 - 768);
   assert.equal(followup.messages[1]!.content, 'Verified earlier question');
   assert.ok(JSON.stringify(followup.messages).includes('UNVERIFIED_ANSWER'));
-  const hugeHistory = buildEmbeddingsContext('Which?', rows, result, profile, plan, {
+  const hugeHistory = buildAnswerContext('Which?', rows, result, profile, plan, {
     history: [{ question: 'x'.repeat(50000), answer: 'Old answer' }],
   });
   assert.equal(hugeHistory.included, 5);
@@ -363,7 +358,7 @@ test('local query parsing is schema validation, never heuristic repairs or keywo
 
 test('fresh search preserves supplied source facts without prior conversation', () => {
   for (const profile of LOCAL_MODELS) {
-    const c = buildEmbeddingsContext('New topic', rows.slice(2), result, profile, plan);
+    const c = buildAnswerContext('New topic', rows.slice(2), result, profile, plan);
     assert.equal(c.historyTurns, 0);
     assert.equal(c.messages.length, 2);
     assert.deepEqual(
@@ -376,7 +371,7 @@ test('fresh search preserves supplied source facts without prior conversation', 
 
 test('a broad answer includes full-pool totals even when retrieved candidates are a subset', () => {
   for (const profile of LOCAL_MODELS) {
-    const c = buildEmbeddingsContext('Review', rows.slice(2), result, profile, {
+    const c = buildAnswerContext('Review', rows.slice(2), result, profile, {
       query: 'SYNTHETIC3',
     });
     assert.ok(c.messages.at(-1)!.content.includes(buildCatalogSummary(result.matches)));
@@ -511,7 +506,7 @@ test('local mode uses real matching, complete history and compact requests; no c
       throw new Error(`Unexpected search operation: ${operation}`);
     },
   });
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     local,
     search,
     matcher: async ({ candidates }) => {
@@ -539,7 +534,7 @@ test('local mode uses real matching, complete history and compact requests; no c
   assert.equal(session.state.error, null);
   const first = session.state.messages.at(-1)!;
   assert.equal(first!.status, 'complete');
-  assert.equal(first!.context!.evidence!.matches[0]!.gene, 'SYNTHETIC1');
+  assert.equal(first!.context!.recordReference.records[0]!.gene, 'SYNTHETIC1');
   assert.equal(first!.context!.included, 5);
   assert.equal(first!.finishReason, 'stop');
   assert.equal(first!.question, 'Hearing?');
@@ -623,7 +618,7 @@ test('local mode uses real matching, complete history and compact requests; no c
     query,
   );
   assert.deepEqual(
-    session.state.messages.at(-1)!.context!.evidence!.matches.map((r) => r.gene),
+    session.state.messages.at(-1)!.context!.recordReference.records.map((r) => r.gene),
     rows.slice(0, 5).map((r) => r.gene),
   );
   session.forget();
@@ -636,7 +631,7 @@ test('cancellation discards provisional matching and frees the UI without creati
   const scanning = new Promise<void>((resolve) => {
     started = resolve;
   });
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     local: new LocalModelSession(),
     fetchImpl: (url) =>
       url === '/ref/release.json'
@@ -671,7 +666,7 @@ test('a fresh session does no work until a genome is selected', async () => {
   let scans = 0;
   let indexes = 0;
   const local = new LocalModelSession();
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     local,
     fetchImpl: (url) => {
       requests++;
@@ -711,7 +706,7 @@ test('explicit preparation is idempotent and does not select or load an answer m
   const local = new LocalModelSession();
   let scans = 0;
   let indexes = 0;
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     local,
     fetchImpl: (url) =>
       url === '/ref/release.json'
@@ -770,7 +765,7 @@ test('refresh restores verified matches without catalog downloads or genome scan
     },
   });
   const local = new LocalModelSession();
-  const cold = new EmbeddingsSession({
+  const cold = new ChatSession({
     local,
     search,
     matchCache: cache,
@@ -797,7 +792,7 @@ test('refresh restores verified matches without catalog downloads or genome scan
   assert.ok(storage.getItem(MATCH_CACHE.key));
   cold.dispose();
   embeddingFails = false;
-  const restored = new EmbeddingsSession({
+  const restored = new ChatSession({
     local: new LocalModelSession(),
     search,
     matchCache: new MatchCache(() => storage),
@@ -844,7 +839,7 @@ test('failed or canceled matching and source changes never publish a saved resul
       removeItem: (k: string) => values.delete(k),
     }));
     let configReads = 0;
-    const session = new EmbeddingsSession({
+    const session = new ChatSession({
       local: new LocalModelSession(),
       matchCache: cache,
       fetchImpl: async (url) => {
@@ -905,7 +900,7 @@ test('changing genome cancels in-flight preparation, rejects late results and cl
   const indexed: string[][] = [];
   const writes = [];
   let scans = 0;
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     identify: identifyGenome,
     fetchImpl: preparationFetch,
     matchCache: Object.assign(new MatchCache(() => undefined), {
@@ -960,7 +955,7 @@ test('rapid file selections keep only the last choice, and choosing the public e
   const started = deferred<AbortSignal>();
   const late = deferred<GenomeSource>();
   const seen: string[] = [];
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     fetchImpl: preparationFetch,
     identify: async (file, options) => {
       if (file.name === 'first.vcf') {
@@ -998,7 +993,7 @@ test('rapid file selections keep only the last choice, and choosing the public e
 });
 
 test('a failed public example can be replaced with a valid upload; invalid files never retain earlier evidence', async () => {
-  const session = new EmbeddingsSession({
+  const session = new ChatSession({
     identify: identifyGenome,
     fetchImpl: preparationFetch,
     matcher: async ({ file }) => {
