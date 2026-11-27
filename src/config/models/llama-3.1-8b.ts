@@ -7,6 +7,8 @@ export const llama31: ModelProfile = Object.freeze({
   modelId: 'Llama-3.1-8B-Instruct-q4f16_1-MLC',
   label: 'Llama 3.1 8B Instruct',
   shortLabel: 'Llama 3.1 8B',
+  maker: 'Meta',
+  blurb: 'General-purpose model with a very large context window.',
   contextWindowTokens: 131072,
   generation: Object.freeze({ temperature: 0.6, top_p: 0.9 }),
 });

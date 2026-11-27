@@ -7,6 +7,8 @@ export const llama32_3b: ModelProfile = Object.freeze({
   modelId: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',
   label: 'Llama 3.2 3B Instruct',
   shortLabel: 'Llama 3.2 3B',
+  maker: 'Meta',
+  blurb: 'Light model that fits most recent laptops.',
   contextWindowTokens: 131072,
   generation: Object.freeze({ temperature: 0.6, top_p: 0.9 }),
 });

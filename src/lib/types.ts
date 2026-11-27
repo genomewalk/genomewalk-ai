@@ -127,6 +127,12 @@ export interface TextProgressOptions {
 }
 export interface ModelProfile {
   note?: string;
+  // Shown in the model picker only.
+  maker?: string;
+  blurb?: string;
+  tag?: string;
+  // Added by the user from a Hugging Face link; kept in this browser.
+  custom?: boolean;
   id: string;
   modelId: string;
   label: string;

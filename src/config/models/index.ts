@@ -6,16 +6,17 @@ import { qwen35 } from './qwen3.5-9b.ts';
 import { deepseekR1Qwen } from './deepseek-r1-qwen-7b.ts';
 import { deepseekR1Llama } from './deepseek-r1-llama-8b.ts';
 
-// Only explicitly configured profiles can be selected. Add future models here;
-// their exact modelId must exist in the pinned WebLLM release's prebuilt catalog.
+// Built-in profiles. A user can add others from a Hugging Face link (src/lib/custom-models.ts).
+// Every modelId must exist in the pinned WebLLM release's prebuilt catalog.
+// Listed from the least to the most memory needed.
 export const LOCAL_MODELS = Object.freeze([
-  llama31,
   llama32_1b,
   llama32_3b,
   qwen3,
-  qwen35,
-  deepseekR1Qwen,
+  llama31,
   deepseekR1Llama,
+  deepseekR1Qwen,
+  qwen35,
 ]);
 const DEFAULT_MODEL_ID = llama31.id;
 export function getModelProfile(id = DEFAULT_MODEL_ID) {

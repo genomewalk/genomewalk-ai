@@ -77,6 +77,7 @@ The chat renders the model’s Markdown. The model can retrieve an unrelated rec
 | `src/lib/evidence-ranking.ts`                  | Shared field-based retrieval policy                                                        |
 | `src/lib/evidence-answer.ts`                   | Original record fields and compact answer descriptions with source links                   |
 | `src/lib/local-model-session.ts`, `webllm.ts`  | Model selection, worker lifetime and inference                                             |
+| `src/lib/custom-models.ts`                     | Models a user adds from the runtime's catalog, kept in this browser                        |
 | `src/config/`, `src/prompts/`                  | Model profiles, budgets, ranking policy and shared prompts                                 |
 | `src/vendor/genomewalk/`                       | Genomewalk parsing and validation modules, with documented adaptations and fingerprints    |
 | `public/ref/`, `public/samples/`               | Checked-in public data; no personal files                                                  |

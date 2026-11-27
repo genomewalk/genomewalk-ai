@@ -10,6 +10,9 @@ export const qwen35: ModelProfile = Object.freeze({
   modelId: 'Qwen3.5-9B-q4f16_1-MLC',
   label: 'Qwen3.5 9B',
   shortLabel: 'Qwen3.5 9B',
+  maker: 'Alibaba',
+  blurb: 'Largest model here. Needs the most memory and time.',
+  tag: 'Largest',
   // Larger browser allocations have lost the WebGPU device locally.
   // Keep the configured browser window explicit rather than silently retrying
   // smaller contexts. See VALIDATION.md for the tested settings.

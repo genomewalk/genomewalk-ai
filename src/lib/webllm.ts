@@ -1,5 +1,27 @@
 import type { EngineOptions, ModelEngine, ModelRequest } from './types.ts';
-import { CreateWebWorkerMLCEngine, prebuiltAppConfig } from '@mlc-ai/web-llm';
+import { CreateWebWorkerMLCEngine, hasModelInCache, prebuiltAppConfig } from '@mlc-ai/web-llm';
+
+export type ModelFacts = Record<string, { memoryMB?: number; cached: boolean }>;
+export interface SupportedModel {
+  id: string;
+  url: string;
+  memoryMB?: number;
+}
+
+// Picker details from the installed release: the chat models it can run (standard
+// 4-bit builds), plus memory need and cached state for the models already listed.
+export async function modelFacts(modelIds: string[]) {
+  const supported: SupportedModel[] = prebuiltAppConfig.model_list
+    .filter((entry) => !entry.model_type && entry.model_id.endsWith('-q4f16_1-MLC'))
+    .map((entry) => ({ id: entry.model_id, url: entry.model, memoryMB: entry.vram_required_MB }));
+  const facts: ModelFacts = {};
+  for (const id of modelIds) {
+    const record = prebuiltAppConfig.model_list.find((entry) => entry.model_id === id);
+    const cached = await hasModelInCache(id, prebuiltAppConfig).catch(() => false);
+    facts[id] = { memoryMB: record?.vram_required_MB, cached };
+  }
+  return { facts, supported };
+}
 
 // Use the weights AND compiled WASM paired by the installed WebLLM release.
 export async function createLocalEngine({

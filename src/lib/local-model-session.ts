@@ -24,7 +24,7 @@ interface SessionOptions {
   modelId?: string | null;
 }
 import { checkWebGPU, explainError } from './model.ts';
-import { getModelProfile } from '../config/models/index.ts';
+import { findModel } from './custom-models.ts';
 import { localModelRequest } from './local-model-request.ts';
 
 // Model selection, GPU lifetime and isolated inference. Conversation state lives in EmbeddingsSession.
@@ -49,7 +49,7 @@ export class LocalModelSession {
     this.epoch = 0;
     this.reservation = null;
     this.state = {
-      model: modelId === null ? null : getModelProfile(modelId),
+      model: modelId === null ? null : findModel(modelId),
       reserved: false,
       phase: modelId === null ? 'unselected' : 'idle',
       progress: 0,
@@ -131,7 +131,7 @@ export class LocalModelSession {
   }
 
   async selectModel(modelId: string) {
-    const profile = getModelProfile(modelId);
+    const profile = findModel(modelId);
     if (
       this.state.busy ||
       this.state.reserved ||
