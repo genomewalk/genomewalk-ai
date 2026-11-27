@@ -578,7 +578,7 @@ export class EmbeddingsSession {
       lease,
       generation: context.generation,
       onRequest: (request) => {
-        this.updateMessage(id, { context: { ...details, submitted: true } });
+        this.updateMessage(id, { context: { ...details, submitted: true }, evidenceAnswer: true });
         this.step(id, 'context', {
           status: 'complete',
           summary: `${context.included} current records sent · ${context.historyTurns} earlier turns · ${context.inputBytes.toLocaleString()} input bytes`,
@@ -594,6 +594,7 @@ export class EmbeddingsSession {
     const { raw, finishReason, usage } = await readCompletion(reply, (progress) =>
       this.updateMessage(id, progress),
     );
+    signal.throwIfAborted();
     this.step(id, 'answer', { data: { raw, finishReason, usage } });
     if (finishReason !== 'stop' || !raw.trim())
       throw new Error('The local answer did not finish normally. Please try again.');
@@ -606,7 +607,6 @@ export class EmbeddingsSession {
     this.updateMessage(id, {
       status: 'complete',
       content: raw,
-      evidenceAnswer: true,
       usage,
       finishReason,
     });

@@ -220,7 +220,7 @@ export function EmbeddingsEvidence({ message }: { message: ChatMessage }) {
         <p className="step-footnote">
           {steps.answer.status === 'complete'
             ? 'The answer is shown in the chat.'
-            : 'The answer will appear in the chat when ready.'}
+            : 'The answer appears in the chat as the model writes it.'}
         </p>
       )}
       {answer?.usage && (

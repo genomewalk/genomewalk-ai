@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../lib/session-types.ts';
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef } from 'react';
 import { Icon } from './Icons.tsx';
 import { MarkdownResponse, ResponseSource } from './MarkdownResponse.ts';
 import { EmbeddingsEvidence } from './EmbeddingsEvidence.tsx';
@@ -60,8 +60,14 @@ export function MessageList({ messages, busy }: { messages: ChatMessage[]; busy:
   );
 }
 
-function ConversationMessage({ message }: { message: ChatMessage }) {
+const ConversationMessage = memo(function ConversationMessage({
+  message,
+}: {
+  message: ChatMessage;
+}) {
   const isAssistant = message.role === 'assistant';
+  const streaming = message.status === 'streaming';
+  const showBubble = !streaming || Boolean(message.content);
   return (
     <article
       className={`message message-${message.role}`}
@@ -72,7 +78,7 @@ function ConversationMessage({ message }: { message: ChatMessage }) {
         <span>{isAssistant ? 'Genomewalk · local catalog review' : 'You'}</span>
       </div>
       {isAssistant && <EmbeddingsEvidence message={message} />}
-      {isAssistant && message.status !== 'streaming' && (
+      {isAssistant && showBubble && (
         <div className="local-answer-heading">
           <Icon name="chip" size={17} />
           <strong>{message.model!.shortLabel} · answer</strong>
@@ -87,7 +93,7 @@ function ConversationMessage({ message }: { message: ChatMessage }) {
           </span>
         </div>
       )}
-      {message.status !== 'streaming' && (
+      {showBubble && (
         <div
           className={`message-bubble ${message.evidenceAnswer ? 'evidence-answer' : ''} ${message.status === 'error' ? 'message-failed' : ''}`}
         >
@@ -104,8 +110,8 @@ function ConversationMessage({ message }: { message: ChatMessage }) {
           )}
         </div>
       )}
-      {isAssistant && message.content && <ResponseSource content={message.content} />}
-      {message.usage && message.status !== 'streaming' && (
+      {isAssistant && !streaming && message.content && <ResponseSource content={message.content} />}
+      {message.usage && !streaming && (
         <p className="message-note local-token-usage">
           {message.status === 'stopped'
             ? 'Stopped'
@@ -122,4 +128,4 @@ function ConversationMessage({ message }: { message: ChatMessage }) {
       )}
     </article>
   );
-}
+});

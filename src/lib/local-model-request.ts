@@ -21,6 +21,7 @@ export function localModelRequest(
 export async function readCompletion(
   chunks: AsyncIterable<ModelChunk>,
   onProgress?: (progress: {
+    content: string;
     finishReason: ModelChunk['choices'][number]['finish_reason'];
     usage: ModelChunk['usage'];
   }) => void,
@@ -33,7 +34,7 @@ export async function readCompletion(
     raw += choice?.delta?.content ?? '';
     finishReason = choice?.finish_reason ?? finishReason;
     usage = chunk.usage ?? usage;
-    onProgress?.({ finishReason, usage });
+    onProgress?.({ content: raw, finishReason, usage });
   }
   return { raw, finishReason, usage };
 }

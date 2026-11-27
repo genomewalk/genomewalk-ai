@@ -57,7 +57,11 @@ async function harness(
                 raw: 'These records contain the requested annotations.',
                 finish: 'stop' as const,
               });
-          yield { choices: [{ delta: { content: reply.raw }, finish_reason: reply.finish }] };
+          const split = Math.ceil(reply.raw.length / 2);
+          yield { choices: [{ delta: { content: reply.raw.slice(0, split) } }] };
+          yield {
+            choices: [{ delta: { content: reply.raw.slice(split) }, finish_reason: reply.finish }],
+          };
         },
       }),
   });
@@ -380,10 +384,31 @@ test('unfinished answers never enter conversation history', async () => {
     const r = await harness([plan('FIXTURE30')], [reply]);
     await r.session.send('Review my findings');
     assert.equal(r.session.state.messages.at(-1)!.status, 'error');
-    assert.equal(r.session.state.messages.at(-1)!.content, '');
+    assert.equal(r.session.state.messages.at(-1)!.content, reply.raw);
     assert.equal(r.session.history.length, 0);
     assert.equal(r.session.local.state.reserved, false);
   }
+});
+
+test('stopping a visible answer keeps its partial text out of the next exchange', async () => {
+  const { session, requests } = await harness(
+    [plan('fixture'), plan('retry')],
+    [answer('First.Second'), answer('Done')],
+  );
+  const unsubscribe = session.subscribe(() => {
+    const message = session.state.messages.at(-1);
+    if (message?.status === 'streaming' && message.content === 'First.') {
+      unsubscribe();
+      session.stop();
+    }
+  });
+  await session.send('First question');
+  assert.equal(session.state.messages.at(-1)!.status, 'stopped');
+  assert.equal(session.state.messages.at(-1)!.content, 'First.');
+  assert.equal(session.history.length, 0);
+  await session.send('Try again');
+  assert.equal(session.state.messages.at(-1)!.status, 'complete');
+  for (const request of requests.slice(2)) assert.equal(request.messages.length, 2);
 });
 
 test('topic search uses similarity alone before admitting five candidates', async () => {
