@@ -65,3 +65,22 @@ test('touching source links get a readable separator only in the rendered answer
   }
   assert.ok(render('`' + a + b + '`').includes('<code>' + a + b + '</code>'));
 });
+
+test('labelled numbers become tiles and links get a source icon without changing the text', () => {
+  const stats = render('- **Total**: 426\n- **Share:** 3.5%');
+  assert.match(stats, /<ul class="stats">/);
+  assert.match(
+    stats,
+    /<li class="fact"><strong>Total<\/strong><span class="fact-separator">:<\/span> 426/,
+  );
+  assert.match(stats, /<strong>Share:<\/strong> 3\.5%/);
+  const prose = render('- **Gene**: TEST\n- **Stars**: 2\n- plain item');
+  assert.doesNotMatch(prose, /stats|fact-separator/);
+  assert.match(prose, /<li class="fact"><strong>Gene<\/strong>: TEST<\/li>/);
+  assert.match(prose, /<li>plain item<\/li>/);
+  const link = render(
+    '[rs1](https://www.ncbi.nlm.nih.gov/snp/rs1) [Paper](https://pubmed.ncbi.nlm.nih.gov/1/)',
+  );
+  assert.match(link, /class="source-link source-variant" href=/);
+  assert.match(link, /class="source-link source-paper" href=/);
+});
